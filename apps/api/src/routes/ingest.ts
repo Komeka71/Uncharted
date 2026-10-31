@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { parseJUnitXml, parseJestJson } from '@culprit/core';
 import { getDb, isDbConnected } from '../db/client.js';
 import { orchestrateAnalysis } from '../services/agentOrchestrator.js';
+import { env } from '../config/env.js';
 
 const router = Router();
 
@@ -27,17 +28,21 @@ router.post('/:projectId', async (req: Request, res: Response) => {
   const { projectId } = req.params;
   const authHeader = req.headers.authorization;
 
-  // Validate bearer token if project exists in DB
-  if (isDbConnected()) {
-    const db = getDb();
-    const project = await db.collection('projects').findOne({ projectId });
-    if (project && project.ingestToken) {
-      const expectedBearer = `Bearer ${project.ingestToken}`;
-      if (!authHeader || authHeader !== expectedBearer) {
-        return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid or missing project bearer token' } });
-      }
-    }
+const expectedTokens: string[] = [];
+if (isDbConnected()) {
+  const db = getDb();
+  const project = await db.collection('projects').findOne({ projectId });
+  if (project?.ingestToken) expectedTokens.push(project.ingestToken);
+}
+const originToken = process.env.ORIGIN_TOKEN || env.ORIGIN_TOKEN;
+if (originToken) expectedTokens.push(originToken);
+
+if (expectedTokens.length > 0) {
+  const ok = expectedTokens.some((t) => authHeader === `Bearer ${t}`);
+  if (!ok) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid or missing bearer token' } });
   }
+}
 
   const parseResult = IngestSchema.safeParse(req.body);
   if (!parseResult.success) {
@@ -136,18 +141,31 @@ router.post('/:projectId', async (req: Request, res: Response) => {
     }
   }
 
-  // If failing log is included, run deterministic analysis
+  // Run deterministic analysis only for failed runs with sufficient evidence
+  const isFailure = run.status.toLowerCase().includes('fail');
   let diagnosisResult = null;
-  if (log && log.trim().length > 0) {
-    const failureId = `fail_${crypto.randomBytes(6).toString('hex')}`;
-    const result = await orchestrateAnalysis({
-      failureId,
-      projectId,
-      runId,
-      jobName: 'ci',
-      rawLog: log
-    });
-    diagnosisResult = result.diagnosis;
+  if (isFailure && log && log.trim().length > 0) {
+    // Idempotency: reuse existing diagnosis for the same run if present
+    let existingFailure: any = null;
+    if (isDbConnected()) {
+      const db = getDb();
+      existingFailure = await db.collection('failures').findOne({ projectId, runId });
+    }
+    if (existingFailure?.diagnosisId) {
+      const db = getDb();
+      const diag = await db.collection('diagnoses').findOne({ diagnosisId: existingFailure.diagnosisId });
+      diagnosisResult = diag;
+    } else {
+      const failureId = `fail_${crypto.randomBytes(6).toString('hex')}`;
+      const result = await orchestrateAnalysis({
+        failureId,
+        projectId,
+        runId,
+        jobName: 'ci',
+        rawLog: log
+      });
+      diagnosisResult = result.diagnosis;
+    }
   }
 
   return res.status(200).json({

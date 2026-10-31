@@ -25,10 +25,11 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 
 // CORS configuration
+const allowedOrigins = env.CORS_ORIGIN === '*' ? '*' : env.CORS_ORIGIN.split(',').map((o) => o.trim());
 app.use(
   cors({
-    origin: '*',
-    credentials: true,
+    origin: allowedOrigins,
+    credentials: allowedOrigins !== '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Hub-Signature-256', 'X-GitHub-Event']
   })

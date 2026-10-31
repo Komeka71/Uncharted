@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { getDb, isDbConnected } from '../db/client.js';
 import { verifyGitHubWebhookSignature } from '../services/github.js';
+import { env } from '../config/env.js';
 import { enqueueJob } from '../queue/jobQueue.js';
 
 const router = Router();
@@ -55,7 +56,7 @@ router.post('/github', async (req: Request, res: Response) => {
     .update(`github:${repository.id}:${runId}:${runAttempt}:${eventType}:${action}`)
     .digest('hex');
 
-  const globalSecret = process.env.GITHUB_WEBHOOK_SECRET;
+  const globalSecret = process.env.GITHUB_WEBHOOK_SECRET || env.GITHUB_WEBHOOK_SECRET;
 
   if (isDbConnected()) {
     const db = getDb();
@@ -119,6 +120,11 @@ router.post('/github', async (req: Request, res: Response) => {
       const first = offlineEventDedupeCache.values().next().value;
       if (first) offlineEventDedupeCache.delete(first);
     }
+  }
+
+  // Only process failing runs; successful runs are not failures
+  if (run.conclusion !== 'failure') {
+    return res.status(200).json({ accepted: true, eventId, status: 'skipped', message: 'Workflow conclusion is not a failure; skipping diagnosis' });
   }
 
   // Enqueue async processing job
