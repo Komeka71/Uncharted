@@ -15,4 +15,4 @@ yarn-error.log*
 .DS_Store
 coverage/
 .turbo/
-env.ts
+apps/api/src/config/env.ts
