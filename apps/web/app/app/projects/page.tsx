@@ -57,7 +57,7 @@ export default function ProjectsSetupPage() {
   const webhookSecret = project?.webhookSecret || 'culprit_demo_secret_2026';
   const ingestToken = project?.ingestToken || 'clp_demo_token_xyz';
 
-  const ghaSnippet = `name: Culprit Ingest
+  const ghaSnippet = `name: Origin Ingest
 on: [push, pull_request]
 
 jobs:
@@ -71,11 +71,11 @@ jobs:
       - run: npm ci
       - run: npm test -- --ci --testResultsProcessor=jest-junit
       
-      - name: Send Test Results to Culprit
+      - name: Send Test Results to Origin
         if: always()
         run: |
           curl -X POST "${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/ingest/demo-shop" \\
-            -H "Authorization: Bearer \${{ secrets.CULPRIT_TOKEN }}" \\
+            -H "Authorization: Bearer \${{ secrets.ORIGIN_TOKEN }}" \\
             -H "Content-Type: application/json" \\
             -d @- << 'EOF'
           {
@@ -105,37 +105,38 @@ jobs:
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-300">
-      <div className="flex items-center justify-between pb-4 border-b border-border/40">
+      <div className="flex items-center justify-between pb-4 border-b border-border/50">
         <div>
-          <h1 className="text-xl font-bold text-text">Projects & Ingestion Setup</h1>
-          <p className="text-xs text-muted mt-1">Connect your GitHub repositories or send CI telemetry from any provider.</p>
+          <h1 className="font-display text-xl sm:text-2xl font-bold text-text">Projects & Ingestion Setup</h1>
+          <p className="text-xs sm:text-sm text-muted mt-1">Connect your GitHub repositories or send CI telemetry from any provider.</p>
         </div>
 
         <Link
           href="/app"
-          className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-accent font-mono transition-colors"
+          className="btn-ghost min-h-[36px] py-1.5 px-3 text-xs"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
+          <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
           <span>Dashboard</span>
         </Link>
       </div>
 
       {/* Project Credentials Card */}
-      <div className="glass-panel p-6 space-y-4">
+      <div className="glass-panel p-6 space-y-4 border border-border/60">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-sm text-text font-mono">Culprit Demo Shop</span>
-            <span className="text-[11px] px-2 py-0.5 rounded bg-accent-soft text-accent font-mono">
-              culprit-ci/culprit-demo-shop
+          <div className="flex items-center gap-2.5">
+            <span className="font-display font-bold text-sm text-text font-mono">Origin Demo Shop</span>
+            <span className="chip text-[11px] py-0.5 px-2">
+              origin-ci/demo-shop
             </span>
           </div>
 
           <button
+            type="button"
             onClick={handleSync}
             disabled={syncing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-border/40 text-xs font-mono text-text transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-border/60 text-xs font-mono text-text transition-colors cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} aria-hidden="true" />
             <span>Sync Recent Runs</span>
           </button>
         </div>
@@ -209,7 +210,7 @@ jobs:
         {activeSnippetTab === 'workflow' && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted font-mono">.github/workflows/culprit-ci.yml</span>
+              <span className="text-xs text-muted font-mono">.github/workflows/origin-ci.yml</span>
               <button
                 onClick={() => handleCopy(ghaSnippet, setCopiedSnippet)}
                 className="flex items-center gap-1 text-xs text-accent hover:text-[#34f38b] font-mono cursor-pointer"

@@ -125,27 +125,30 @@ export default function InstantAnalyzer() {
   };
 
   return (
-    <div id="analyzer" className="w-full max-w-4xl mx-auto glass-panel p-6 sm:p-8 shadow-glow-emerald">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+    <div id="analyzer" className="w-full max-w-4xl mx-auto glass-panel p-6 sm:p-8 border border-border shadow-2xl">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
         <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-text">Instant Log Analyzer</h3>
-            <span className="text-[11px] px-2 py-0.5 rounded-full badge-glow font-mono">No Login Required</span>
+          <div className="flex items-center gap-2.5">
+            <h3 className="font-display text-xl sm:text-2xl font-bold text-text">Instant Log Analyzer</h3>
+            <span className="chip text-[11px] py-0.5 px-2.5">No login needed</span>
           </div>
-          <p className="text-xs text-muted mt-1">Paste a raw CI log snippet or pick from real GitHub Actions failures.</p>
+          <p className="text-xs sm:text-sm text-muted mt-1 max-w-xl">
+            Paste a failing CI log snippet or load a real GitHub Actions failure below to see deterministic diagnosis in real time.
+          </p>
         </div>
 
         {/* Sample selector */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-muted font-mono mr-1">Sample:</span>
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Sample log templates">
+          <span className="text-[11px] text-muted font-mono mr-1">Load sample:</span>
           {Object.entries(SAMPLES).map(([key, sample]) => (
             <button
               key={key}
+              type="button"
               onClick={() => {
                 setLogText(sample.text);
                 handleAnalyze(sample.text);
               }}
-              className="text-[11px] px-2.5 py-1 rounded-lg bg-surface-2 hover:bg-surface-3 border border-border/40 text-text/90 font-mono transition-colors"
+              className="text-[11px] px-2.5 py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-border/50 text-text/90 font-mono transition-all hover:border-accent/60 hover:text-accent focus-visible:ring-2 focus-visible:ring-accent cursor-pointer min-h-[32px]"
             >
               {sample.label}
             </button>
@@ -154,29 +157,37 @@ export default function InstantAnalyzer() {
       </div>
 
       {/* Editor Box */}
-      <div className="relative mb-4">
+      <div className="relative mb-5">
+        <label htmlFor="ci-log-input" className="sr-only">
+          Raw CI Log Input
+        </label>
         <textarea
+          id="ci-log-input"
           value={logText}
           onChange={(e) => setLogText(e.target.value)}
-          rows={6}
+          rows={7}
           placeholder="Paste raw GitHub Actions log lines here..."
-          className="w-full rounded-xl bg-black/60 border border-border/40 p-4 font-mono text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all resize-y"
+          className="w-full rounded-xl bg-[#040806] border border-border/60 p-4 font-mono text-xs text-text placeholder:text-muted/40 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all resize-y leading-relaxed shadow-inner"
         />
-        <div className="absolute right-3 bottom-4">
+        <div className="flex items-center justify-between mt-2.5">
+          <span className="text-[11px] text-muted font-mono">
+            {logText.split('\n').length} lines • Secrets automatically redacted before analysis
+          </span>
           <button
+            type="button"
             onClick={() => handleAnalyze()}
             disabled={loading || !logText.trim()}
-            className="flex items-center gap-2 px-5 py-2 rounded-full text-xs font-semibold text-bg bg-accent hover:bg-[#34f38b] disabled:opacity-50 transition-all shadow-glow-sm hover:shadow-glow-emerald cursor-pointer"
+            className="btn-primary min-h-[44px] px-6 text-xs font-semibold disabled:opacity-50 cursor-pointer"
           >
             {loading ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Investigating...</span>
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                <span>Investigating Log...</span>
               </>
             ) : (
               <>
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Diagnose Log</span>
+                <Sparkles className="w-4 h-4" aria-hidden="true" />
+                <span>Diagnose Log Now</span>
               </>
             )}
           </button>
@@ -185,44 +196,48 @@ export default function InstantAnalyzer() {
 
       {/* Diagnosis Results Card */}
       {result && result.diagnosis && (
-        <div className="mt-6 pt-6 border-t border-border/40 space-y-4 animate-in fade-in duration-300">
+        <div
+          role="region"
+          aria-live="polite"
+          className="mt-6 pt-6 border-t border-border/50 space-y-4 animate-in fade-in duration-300"
+        >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-1 rounded-md bg-accent-soft text-accent text-xs font-mono font-bold uppercase">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded-md bg-accent-soft border border-border text-accent text-xs font-mono font-bold uppercase tracking-wider">
                 {result.diagnosis.category}
               </span>
               <span className="text-xs text-muted font-mono">
-                Rule: <strong className="text-text">{result.diagnosis.ruleId}</strong>
+                Rule: <strong className="text-text font-semibold">{result.diagnosis.ruleId}</strong>
               </span>
               <span className="text-xs text-muted font-mono">
-                Signature: <strong className="text-accent">{result.diagnosis.signature}</strong>
+                Signature: <strong className="text-accent font-semibold">{result.diagnosis.signature}</strong>
               </span>
             </div>
 
             <div className="flex items-center gap-2 text-xs">
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-mono text-[11px] flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" />
+              <span className="px-2.5 py-1 rounded-full bg-accent-soft/80 border border-border text-accent font-mono text-[11px] flex items-center gap-1.5 font-medium">
+                <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
                 Evidence Grounded
               </span>
               <span className="px-2 py-0.5 rounded-full bg-surface-2 text-muted font-mono text-[11px]">
-                Source: {result.diagnosis.source}
+                Engine: {result.diagnosis.source}
               </span>
             </div>
           </div>
 
           {/* Root cause callout */}
-          <div className="p-4 rounded-xl bg-accent-soft/40 border border-border/60">
-            <div className="text-xs font-mono text-accent uppercase font-bold tracking-wider mb-1">
-              Grounded Root Cause
+          <div className="p-4 rounded-xl bg-accent-soft/20 border border-border">
+            <div className="text-[11px] font-mono text-accent uppercase font-bold tracking-wider mb-1.5 flex items-center gap-1.5">
+              <span>Deterministic Root Cause</span>
             </div>
             <div className="text-sm font-medium text-text leading-relaxed">
               {result.diagnosis.rootCause}
             </div>
             {result.diagnosis.evidenceLines && result.diagnosis.evidenceLines.length > 0 && (
-              <div className="mt-2 text-xs text-muted font-mono">
-                Cited Log Line(s):{' '}
-                <span className="text-accent font-bold">
-                  {result.diagnosis.evidenceLines.map((l: number) => `L${l}`).join(', ')}
+              <div className="mt-2.5 text-xs text-muted font-mono flex items-center gap-1.5">
+                <span>Cited Evidence:</span>
+                <span className="text-accent font-bold px-2 py-0.5 rounded bg-accent-soft border border-border/60">
+                  {result.diagnosis.evidenceLines.map((l: number) => `Line ${l}`).join(', ')}
                 </span>
               </div>
             )}
@@ -230,13 +245,17 @@ export default function InstantAnalyzer() {
 
           {/* Fix Steps */}
           {result.diagnosis.fixSteps && result.diagnosis.fixSteps.length > 0 && (
-            <div className="p-4 rounded-xl bg-surface-2 border border-border/40">
-              <div className="text-xs font-mono text-muted uppercase font-bold mb-2">Recommended Fix Action</div>
-              <ol className="list-decimal list-inside space-y-1 text-xs text-text">
+            <div className="p-4 rounded-xl bg-surface-2 border border-border/60 space-y-2">
+              <div className="text-xs font-mono text-muted uppercase font-bold tracking-wider">
+                Recommended Remediation Steps
+              </div>
+              <ol className="space-y-2 text-xs text-text">
                 {result.diagnosis.fixSteps.map((step: string, idx: number) => (
-                  <li key={idx} className="leading-relaxed">
-                    <span className="font-mono text-muted mr-1.5">{idx + 1}.</span>
-                    {step}
+                  <li key={idx} className="flex items-start gap-2.5 leading-relaxed">
+                    <span className="w-5 h-5 rounded-full bg-accent-soft border border-border flex items-center justify-center text-[10px] font-mono text-accent font-bold flex-shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <span className="pt-0.5">{step}</span>
                   </li>
                 ))}
               </ol>
@@ -245,18 +264,24 @@ export default function InstantAnalyzer() {
 
           {/* Patch snippet if available */}
           {result.diagnosis.patch && (
-            <div className="rounded-xl bg-black/80 border border-border/40 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-mono text-muted">Suggested Patch (Preview)</span>
+            <div className="rounded-xl bg-[#040806] border border-border/60 p-4">
+              <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-white/5">
+                <span className="text-[11px] font-mono text-muted">Remediation Patch (Git Unified Diff)</span>
                 <button
+                  type="button"
                   onClick={() => copyPatch(result.diagnosis.patch)}
-                  className="flex items-center gap-1 text-[11px] text-accent hover:text-[#34f38b] font-mono cursor-pointer"
+                  className="flex items-center gap-1.5 text-xs text-accent hover:text-accent-strong font-mono transition-colors focus-visible:ring-2 focus-visible:ring-accent rounded px-2 py-1 min-h-[32px] cursor-pointer"
+                  aria-label={copiedPatch ? 'Patch copied to clipboard' : 'Copy git patch to clipboard'}
                 >
-                  {copiedPatch ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedPatch ? 'Copied!' : 'Copy Patch'}</span>
+                  {copiedPatch ? (
+                    <Check className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                  )}
+                  <span>{copiedPatch ? 'Copied to Clipboard!' : 'Copy Patch'}</span>
                 </button>
               </div>
-              <pre className="font-mono text-xs text-emerald-300 overflow-x-auto whitespace-pre">
+              <pre className="font-mono text-xs text-emerald-300/90 overflow-x-auto whitespace-pre p-2 bg-black/40 rounded-lg">
                 {result.diagnosis.patch}
               </pre>
             </div>

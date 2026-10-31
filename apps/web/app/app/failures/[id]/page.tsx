@@ -204,7 +204,7 @@ export default function FailureDetailPage() {
   };
 
   const handleCopyMarkdown = () => {
-    const md = `# Culprit Failure Diagnosis: ${diagnosis?.title || failure?.ruleId}
+    const md = `# Origin Failure Diagnosis: ${diagnosis?.title || failure?.ruleId}
 **Signature:** \`${failure?.signature}\`  
 **Category:** ${failure?.category}  
 **Confidence:** ${diagnosis?.confidence}  
@@ -638,7 +638,7 @@ ${diagnosis?.patch ? `\`\`\`diff\n${diagnosis.patch}\n\`\`\`` : ''}
           <div className="glass-panel p-6 max-w-md w-full space-y-4 border border-border shadow-glow-emerald">
             <h3 className="text-sm font-bold text-text font-mono">Mark as Fixed by...</h3>
             <p className="text-xs text-muted">
-              Attach a fix note to signature <strong className="text-accent">{failure?.signature}</strong>. Next time this failure recurs, Culprit will automatically show this fix to the team.
+              Attach a fix note to signature <strong className="text-accent">{failure?.signature}</strong>. Next time this failure recurs, Origin will automatically show this fix to the team.
             </p>
 
             <div className="space-y-3">

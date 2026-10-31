@@ -36,24 +36,24 @@ export default function FlakyTestsPage() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
-      <div className="flex items-center justify-between pb-4 border-b border-border/40">
+      <div className="flex items-center justify-between pb-4 border-b border-border/50">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-text">Flaky vs Broken Intelligence</h1>
-            <span className="text-xs px-2.5 py-0.5 rounded-full badge-glow font-mono font-medium">
+          <div className="flex items-center gap-2.5">
+            <h1 className="font-display text-xl sm:text-2xl font-bold text-text">Flaky vs Broken Intelligence</h1>
+            <span className="chip text-[11px] font-mono py-0.5 px-2.5">
               30-Execution Window
             </span>
           </div>
-          <p className="text-xs text-muted mt-1">
+          <p className="text-xs sm:text-sm text-muted mt-1">
             <strong>Broken</strong> means consistently failing since a specific commit; <strong>flaky</strong> means inconsistent results or same-SHA flip regressions.
           </p>
         </div>
 
         <Link
           href="/app"
-          className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-accent font-mono transition-colors"
+          className="btn-ghost min-h-[36px] py-1.5 px-3 text-xs"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
+          <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
           <span>Dashboard</span>
         </Link>
       </div>

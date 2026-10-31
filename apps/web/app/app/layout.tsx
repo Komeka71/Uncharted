@@ -99,20 +99,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-bg text-text">
+    <div className="min-h-screen flex flex-col bg-bg text-text ambient-grid relative selection:bg-accent/30 selection:text-text">
+      {/* Background ambient radial glow */}
+      <div
+        className="absolute top-10 left-1/3 w-[500px] h-[500px] bg-accent/6 rounded-full blur-[140px] pointer-events-none"
+        aria-hidden="true"
+      />
+      <div
+        className="absolute top-80 right-1/4 w-[400px] h-[400px] bg-teal-500/5 rounded-full blur-[140px] pointer-events-none"
+        aria-hidden="true"
+      />
+
       {/* App Topbar */}
-      <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-bg/90 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 w-full border-b border-border/50 bg-bg/90 backdrop-blur-2xl shadow-lg shadow-black/20">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-accent-soft border border-border flex items-center justify-center text-accent">
-                <Terminal className="w-4 h-4" />
+            <Link
+              href="/"
+              className="flex items-center gap-2.5 group focus-visible:ring-2 focus-visible:ring-accent rounded-lg"
+              aria-label="Origin Home"
+            >
+              <div className="w-8 h-8 rounded-xl bg-accent-soft border border-border flex items-center justify-center text-accent shadow-glow-sm group-hover:scale-105 transition-transform">
+                <Terminal className="w-4 h-4" aria-hidden="true" />
               </div>
-              <span className="font-bold text-base tracking-tight text-text">Culprit</span>
+              <div className="flex items-center gap-2">
+                <span className="font-display font-bold text-base tracking-tight text-text">Origin</span>
+                <span className="chip text-[10px] font-mono py-0.5 px-2">CI Platform</span>
+              </div>
             </Link>
 
             {/* Nav items */}
-            <nav className="hidden md:flex items-center gap-1">
+            <nav aria-label="Dashboard navigation" className="hidden md:flex items-center gap-1.5">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
@@ -120,13 +137,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                       active
-                        ? 'bg-accent-soft text-accent border border-border/60'
-                        : 'text-muted hover:text-text hover:bg-surface-2'
+                        ? 'bg-accent-soft text-accent border border-border font-semibold shadow-sm'
+                        : 'text-muted hover:text-text hover:bg-surface-2 border border-transparent'
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <Icon className="w-4 h-4" aria-hidden="true" />
                     <span>{item.name}</span>
                   </Link>
                 );
@@ -137,23 +154,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Right Toolbar: Live SSE dot + Demo Action Bar */}
           <div className="flex items-center gap-3">
             {/* Live Indicator */}
-            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full bg-surface-2 border border-border/40 text-[11px] font-mono text-muted">
-              <span className={`w-2 h-2 rounded-full ${liveConnected ? 'bg-accent animate-pulse' : 'bg-amber-400'}`} />
-              <span>{liveConnected ? 'LIVE STREAM' : 'POLLING'}</span>
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-surface-2 border border-border/50 text-[11px] font-mono">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  liveConnected ? 'bg-accent animate-pulse' : 'bg-warn'
+                }`}
+                aria-hidden="true"
+              />
+              <span className={liveConnected ? 'text-accent font-semibold' : 'text-muted'}>
+                {liveConnected ? 'LIVE SSE' : 'POLLING'}
+              </span>
             </div>
 
             {/* Demo Actions Dropdown / Buttons */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={handleSeedDemo}
                 disabled={simulating}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-accent-soft text-accent border border-border hover:bg-accent hover:text-bg transition-all cursor-pointer"
+                className="btn-primary min-h-[36px] py-1.5 px-3.5 text-xs font-semibold cursor-pointer shadow-sm disabled:opacity-50"
                 title="Seed demo project with 40 runs and regressions"
               >
-                Seed Demo
+                <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Seed Demo</span>
               </button>
 
               <select
+                aria-label="Simulate CI failure scenario"
                 onChange={(e) => {
                   if (e.target.value) {
                     handleSimulate(e.target.value);
@@ -161,7 +188,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   }
                 }}
                 disabled={simulating}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-surface-2 text-text border border-border/60 focus:outline-none focus:border-accent cursor-pointer"
+                className="px-3 py-1.5 rounded-lg text-xs font-mono bg-surface-2 text-text border border-border/70 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent cursor-pointer min-h-[36px]"
               >
                 <option value="">⚡ Simulate Run...</option>
                 <option value="dependency">npm lockfile mismatch</option>
@@ -172,11 +199,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </select>
 
               <button
+                type="button"
                 onClick={handleReset}
-                className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface-2 border border-transparent hover:border-border/40 transition-colors cursor-pointer"
+                className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-muted hover:text-text hover:bg-surface-2 border border-border/40 hover:border-border transition-colors cursor-pointer"
                 title="Reset demo state"
+                aria-label="Reset demo state"
               >
-                <RotateCcw className="w-4 h-4" />
+                <RotateCcw className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -184,14 +213,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Global Toast Notification */}
         {actionNotice && (
-          <div className="bg-accent/15 border-b border-accent/30 py-1.5 px-6 text-center text-xs text-accent font-mono animate-in slide-in-from-top-2 duration-200">
+          <div
+            role="status"
+            className="bg-accent/15 border-b border-accent/30 py-2 px-6 text-center text-xs text-accent font-mono animate-in slide-in-from-top-2 duration-200"
+          >
             {actionNotice}
           </div>
         )}
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8 relative z-10">
         {children}
       </main>
     </div>
