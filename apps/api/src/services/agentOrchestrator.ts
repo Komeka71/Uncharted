@@ -9,7 +9,9 @@ import {
 } from '@culprit/core';
 import { runInvestigatorAgent } from './gemini.js';
 import { broadcastSSE } from './sse.js';
+import { notifyN8nWebhook } from './n8n.js';
 import { getDb, isDbConnected } from '../db/client.js';
+import { env } from '../config/env.js';
 
 export interface AgentStepRecord {
   failureId: string;
@@ -361,6 +363,20 @@ export async function orchestrateAnalysis(
     summary: diagnosis.summary,
     confidence: diagnosis.confidence,
     source
+  });
+
+  // Notify n8n webhook (fire-and-forget; never blocks analysis)
+  void notifyN8nWebhook(env.N8N_WEBHOOK_URL, {
+    failureId,
+    projectId,
+    diagnosisId,
+    summary: diagnosis.summary,
+    rootCause: diagnosis.rootCause,
+    confidence: diagnosis.confidence,
+    category: ruleMatch.category,
+    fixSteps,
+    source,
+    createdAt: diagnosis.createdAt,
   });
 
   agentSteps.push({
