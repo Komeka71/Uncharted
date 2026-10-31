@@ -12,11 +12,25 @@ export function stripAnsi(text: string): string {
 }
 
 export function parseAndCleanLog(rawLog: string): ParsedLog {
-  // Step 1: Strip ANSI and split lines
+  if (!rawLog || typeof rawLog !== 'string') {
+    return {
+      raw: '',
+      cleanedLines: [],
+      steps: [],
+      failingStepName: undefined,
+      redactions: {
+        count: 0,
+        types: {}
+      },
+      windowedLines: []
+    };
+  }
+
+  // Step 1: Strip ANSI and split lines (normalizing both \r\n and \r)
   const cleanAnsi = stripAnsi(rawLog);
-  const rawLines = cleanAnsi.split(/\r?\n/);
 
   // Step 2: Redact secrets first while keeping exact 1:1 line mapping
+  // This guarantees that both cleanedLines AND the raw field cannot expose credentials
   const redactionRes = redactSecrets(cleanAnsi);
   const redactedLines = redactionRes.lines;
 
@@ -49,15 +63,21 @@ export function parseAndCleanLog(rawLog: string): ParsedLog {
       currentStepName = groupMatch[1].trim() || `Step ${steps.length + 1}`;
       currentStepHasError = false;
       currentStepLines = [];
+      cleanedLines.push({ lineNo: originalLineNo, text: strippedLine });
+      continue;
     } else if (/^##\[endgroup\]/.test(strippedLine)) {
-      steps.push({
-        name: currentStepName,
-        hasError: currentStepHasError,
-        lines: currentStepLines
-      });
+      if (currentStepLines.length > 0) {
+        steps.push({
+          name: currentStepName,
+          hasError: currentStepHasError,
+          lines: currentStepLines
+        });
+      }
       currentStepName = 'Post-Step';
       currentStepHasError = false;
       currentStepLines = [];
+      cleanedLines.push({ lineNo: originalLineNo, text: strippedLine });
+      continue;
     }
 
     if (/##\[error\]/i.test(strippedLine) || /Process completed with exit code [1-9]/i.test(strippedLine)) {
@@ -83,8 +103,10 @@ export function parseAndCleanLog(rawLog: string): ParsedLog {
   // Windowing for big logs: keep first 50 lines, 120 lines around first error, last 150 lines
   const windowedLines = calculateLogWindow(cleanedLines);
 
+  // SECURITY BOUNDARY GUARANTEE:
+  // raw must never contain unredacted secrets. We store the sanitized, redacted text.
   return {
-    raw: rawLog,
+    raw: redactionRes.cleanedText,
     cleanedLines,
     steps,
     failingStepName,

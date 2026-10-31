@@ -39,4 +39,54 @@ describe('Deterministic Rules Engine', () => {
       assert.ok(res.fingerprint.signature.length === 16, 'Signature must be 16 hex characters');
     });
   }
+
+  test('rule precedence: specific failure outranks generic-exit-code when both match', () => {
+    // A log that has both a TypeScript compiler error AND an exit code 1 at the end
+    const log = [
+      'Running build script...',
+      'src/server.ts(23,7): error TS2322: Type "string" is not assignable to type "number".',
+      'Process completed with exit code 1.'
+    ].join('\n');
+
+    const res = analyzeLogDeterministically(log);
+    assert.strictEqual(res.ruleMatch.ruleId, 'ts-compile-error', 'Specific ts-compile-error must win over generic-exit-code');
+    assert.strictEqual(res.ruleMatch.category, 'build_compile');
+    assert.ok(res.ruleMatch.confidence >= 0.95);
+  });
+
+  test('rule precedence: high confidence and extracted entities win', () => {
+    // Log with npm lock out of sync (0.98) and exit code
+    const log = [
+      'npm ci can only install packages when your package.json and package-lock.json are in sync',
+      'npm ERR! Missing: lodash from lock file',
+      'Process completed with exit code 1.'
+    ].join('\n');
+
+    const res = analyzeLogDeterministically(log);
+    assert.strictEqual(res.ruleMatch.ruleId, 'npm-lock-out-of-sync');
+    assert.strictEqual(res.ruleMatch.category, 'dependency');
+  });
+
+  test('unknown failure: logs with no recognized patterns return unknown-failure without hallucinating', () => {
+    const log = [
+      'Starting arbitrary pipeline...',
+      'Step 1 succeeded',
+      'Something totally strange happened in custom user binary xyz',
+      'Stopping execution.'
+    ].join('\n');
+
+    const res = analyzeLogDeterministically(log);
+    assert.strictEqual(res.ruleMatch.ruleId, 'unknown-failure');
+    assert.strictEqual(res.ruleMatch.category, 'unknown');
+    assert.strictEqual(res.ruleMatch.confidence, 0.3);
+    assert.ok(res.ruleMatch.explanation.includes('No specific signature matched'));
+  });
+
+  test('empty log handling produces clean unknown-failure result', () => {
+    const res = analyzeLogDeterministically('');
+    assert.strictEqual(res.ruleMatch.ruleId, 'unknown-failure');
+    assert.strictEqual(res.ruleMatch.category, 'unknown');
+    assert.strictEqual(res.parsedLog.cleanedLines.length, 0);
+  });
 });
+

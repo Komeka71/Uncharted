@@ -5,6 +5,7 @@ import { verifyGitHubWebhookSignature } from '../services/github.js';
 import { enqueueJob } from '../queue/jobQueue.js';
 
 const router = Router();
+const offlineEventDedupeCache = new Set<string>();
 
 router.post('/github', async (req: Request, res: Response) => {
   const eventType = req.headers['x-github-event'] as string;
@@ -44,11 +45,17 @@ router.post('/github', async (req: Request, res: Response) => {
   const runId = run.id;
   const runAttempt = run.run_attempt || 1;
 
-  // Idempotency: sha256(source + repoId + runId + runAttempt + eventType)
+  if (!repoOwner || !repoName || !runId) {
+    return res.status(400).json({ error: { code: 'INVALID_PAYLOAD', message: 'Missing repoOwner, repoName, or runId in payload' } });
+  }
+
+  // Idempotency: sha256(source + repoId + runId + runAttempt + eventType + action)
   const eventId = crypto
     .createHash('sha256')
     .update(`github:${repository.id}:${runId}:${runAttempt}:${eventType}:${action}`)
     .digest('hex');
+
+  const globalSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
   if (isDbConnected()) {
     const db = getDb();
@@ -59,8 +66,15 @@ router.post('/github', async (req: Request, res: Response) => {
       'repo.name': repoName
     });
 
-    if (project && project.webhookSecret && signature) {
-      const isValid = verifyGitHubWebhookSignature(rawBody, signature, project.webhookSecret);
+    const effectiveSecret = project?.webhookSecret || globalSecret;
+
+    if (effectiveSecret) {
+      if (!signature) {
+        return res.status(401).json({
+          error: { code: 'MISSING_SIGNATURE', message: 'X-Hub-Signature-256 header is required when webhook secret is configured' }
+        });
+      }
+      const isValid = verifyGitHubWebhookSignature(rawBody, signature, effectiveSecret);
       if (!isValid) {
         return res.status(401).json({ error: { code: 'INVALID_SIGNATURE', message: 'HMAC signature verification failed' } });
       }
@@ -79,9 +93,31 @@ router.post('/github', async (req: Request, res: Response) => {
     } catch (err: any) {
       if (err.code === 11000) {
         // Duplicate event! Idempotent return
-        console.log(`[Webhook] Duplicate event ignored: ${eventId}`);
         return res.status(200).json({ duplicate: true, message: 'Event already received and processed' });
       }
+    }
+  } else {
+    // Offline mode: verify global secret if present
+    if (globalSecret) {
+      if (!signature) {
+        return res.status(401).json({
+          error: { code: 'MISSING_SIGNATURE', message: 'X-Hub-Signature-256 header is required when webhook secret is configured' }
+        });
+      }
+      const isValid = verifyGitHubWebhookSignature(rawBody, signature, globalSecret);
+      if (!isValid) {
+        return res.status(401).json({ error: { code: 'INVALID_SIGNATURE', message: 'HMAC signature verification failed' } });
+      }
+    }
+
+    // In-memory deduplication fallback
+    if (offlineEventDedupeCache.has(eventId)) {
+      return res.status(200).json({ duplicate: true, message: 'Event already received and processed (offline cache)' });
+    }
+    offlineEventDedupeCache.add(eventId);
+    if (offlineEventDedupeCache.size > 1000) {
+      const first = offlineEventDedupeCache.values().next().value;
+      if (first) offlineEventDedupeCache.delete(first);
     }
   }
 
