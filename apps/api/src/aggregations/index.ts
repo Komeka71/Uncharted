@@ -1,4 +1,5 @@
 import { Db } from 'mongodb';
+import { calculateFlakeStats, TestOutcomeRecord, FlakeVerdict } from '@culprit/core';
 
 export interface TopRecurringResult {
   signature: string;
@@ -32,6 +33,8 @@ export async function aggregateTopRecurringFailures(
         createdAt: { $gte: sinceDate }
       }
     },
+    // Sort by createdAt descending so grouping grabs the latest occurrence details
+    { $sort: { createdAt: -1 } },
     {
       $group: {
         _id: '$signature',
@@ -154,14 +157,29 @@ export async function aggregateMttr(db: Db, projectId: string): Promise<MttrResu
     {
       $match: {
         projectId,
-        status: 'resolved',
-        firstSeenAt: { $exists: true },
-        lastSeenAt: { $exists: true }
+        status: 'resolved'
       }
     },
     {
       $project: {
-        durationMs: { $subtract: ['$lastSeenAt', '$firstSeenAt'] }
+        startTime: { $ifNull: ['$firstSeen', { $ifNull: ['$firstSeenAt', '$createdAt'] }] },
+        endTime: { $ifNull: ['$resolvedAt', { $ifNull: ['$lastSeen', '$lastSeenAt'] }] }
+      }
+    },
+    {
+      $match: {
+        startTime: { $ne: null },
+        endTime: { $ne: null }
+      }
+    },
+    {
+      $project: {
+        durationMs: { $subtract: ['$endTime', '$startTime'] }
+      }
+    },
+    {
+      $match: {
+        durationMs: { $gt: 0 }
       }
     },
     {
@@ -175,13 +193,69 @@ export async function aggregateMttr(db: Db, projectId: string): Promise<MttrResu
 
   const res = await db.collection('signatures').aggregate(pipeline).toArray();
   if (res.length === 0 || !res[0].avgMs) {
-    return { averageMttrHours: 2.4, totalResolvedSignatures: 0 };
+    // Honest reporting: 0 resolved signatures, 0 MTTR
+    return { averageMttrHours: 0, totalResolvedSignatures: 0 };
   }
 
   const hours = Math.round((res[0].avgMs / (1000 * 60 * 60)) * 10) / 10;
   return {
-    averageMttrHours: hours || 1.5,
+    averageMttrHours: hours,
     totalResolvedSignatures: res[0].count
+  };
+}
+
+export interface RecurringRateResult {
+  totalFailures: number;
+  recurringFailures: number;
+  recurringRatePct: number;
+}
+
+/**
+ * Computes the percentage of failures whose error signature occurs more than once.
+ */
+export async function aggregateRecurringRate(
+  db: Db,
+  projectId: string,
+  days = 7
+): Promise<RecurringRateResult> {
+  const sinceDate = new Date();
+  sinceDate.setDate(sinceDate.getDate() - days);
+
+  const pipeline = [
+    {
+      $match: {
+        projectId,
+        createdAt: { $gte: sinceDate }
+      }
+    },
+    {
+      $group: {
+        _id: '$signature',
+        count: { $sum: 1 }
+      }
+    }
+  ];
+
+  const signatureCounts = await db.collection('failures').aggregate<{ _id: string; count: number }>(pipeline).toArray();
+
+  let totalFailures = 0;
+  let recurringFailures = 0;
+
+  for (const item of signatureCounts) {
+    totalFailures += item.count;
+    if (item.count > 1) {
+      recurringFailures += item.count;
+    }
+  }
+
+  const recurringRatePct = totalFailures > 0
+    ? Math.min(100, Math.round((recurringFailures / totalFailures) * 100))
+    : 0;
+
+  return {
+    totalFailures,
+    recurringFailures,
+    recurringRatePct
   };
 }
 
@@ -193,9 +267,10 @@ export interface FlakyAggregationResult {
   sameShaFlips: number;
   flips: number;
   historySparkline: ('pass' | 'fail')[];
-  verdict: 'flaky' | 'broken' | 'watch' | 'stable';
+  verdict: FlakeVerdict;
   lastErrorMessage?: string;
   recommendation: string;
+  flakeRate?: number;
 }
 
 export async function aggregateFlakyTests(
@@ -211,6 +286,7 @@ export async function aggregateFlakyTests(
         _id: '$testId',
         records: {
           $push: {
+            runId: '$runId',
             headSha: '$headSha',
             outcome: '$outcome',
             ts: '$ts',
@@ -218,83 +294,59 @@ export async function aggregateFlakyTests(
           }
         }
       }
-    },
-    { $limit: limit }
+    }
   ];
 
   const results = await db.collection('testResults').aggregate(pipeline).toArray();
 
-  return results.map((item: any) => {
-    const rawRecords = item.records.slice(-30);
-    let passes = 0;
-    let fails = 0;
-    let flips = 0;
-    let prevOutcome: 'pass' | 'fail' | null = null;
-    const shaMap = new Map<string, Set<'pass' | 'fail'>>();
-    const historySparkline: ('pass' | 'fail')[] = [];
-    let lastError: string | undefined;
+  // Process all tests through core's calculateFlakeStats
+  const assessedTests: FlakyAggregationResult[] = results.map((item: any) => {
+    const rawRecords = item.records || [];
+    const outcomeRecords: TestOutcomeRecord[] = rawRecords.map((r: any) => ({
+      runId: r.runId || '',
+      headSha: r.headSha || '',
+      outcome: r.outcome,
+      timestamp: r.ts instanceof Date ? r.ts : new Date(r.ts),
+      errorMessage: r.errorMessage
+    }));
 
-    for (const r of rawRecords) {
-      if (r.outcome === 'skipped') continue;
-      const outcome = r.outcome === 'pass' ? 'pass' : 'fail';
-      historySparkline.push(outcome);
-
-      if (outcome === 'fail') {
-        fails++;
-        if (r.errorMessage) lastError = r.errorMessage;
-      } else {
-        passes++;
-      }
-
-      if (prevOutcome !== null && prevOutcome !== outcome) {
-        flips++;
-      }
-      prevOutcome = outcome;
-
-      if (!shaMap.has(r.headSha)) {
-        shaMap.set(r.headSha, new Set());
-      }
-      shaMap.get(r.headSha)!.add(outcome);
-    }
-
-    let sameShaFlips = 0;
-    for (const outcomes of shaMap.values()) {
-      if (outcomes.has('pass') && outcomes.has('fail')) {
-        sameShaFlips++;
-      }
-    }
-
-    const totalRuns = passes + fails;
-    let verdict: 'flaky' | 'broken' | 'watch' | 'stable' = 'stable';
-    let recommendation = 'Test is healthy and passing consistently.';
-
-    if (fails === 0) {
-      verdict = 'stable';
-    } else if (totalRuns < 5) {
-      verdict = 'watch';
-      recommendation = 'Insufficient runs to diagnose.';
-    } else if (passes === 0) {
-      verdict = 'broken';
-      recommendation = 'Consistently failing. Real code defect.';
-    } else if (sameShaFlips > 0 || flips >= 3) {
-      verdict = 'flaky';
-      recommendation = `High flakiness (${sameShaFlips} same-commit flips). Quarantine candidate.`;
-    } else {
-      verdict = 'flaky';
-      recommendation = 'Intermittent failures observed.';
-    }
+    const stats = calculateFlakeStats(item._id, outcomeRecords);
 
     return {
-      testId: item._id,
-      totalRuns,
-      fails,
-      passes,
-      sameShaFlips,
-      flips,
-      historySparkline,
-      verdict,
-      lastErrorMessage: lastError,
-      recommendation
+      testId: stats.testId,
+      totalRuns: stats.totalRuns,
+      fails: stats.fails,
+      passes: stats.passes,
+      sameShaFlips: stats.sameShaFlips,
+      flips: stats.flips,
+      historySparkline: stats.historySparkline,
+      verdict: stats.verdict,
+      lastErrorMessage: stats.sampleErrorMessage,
+      recommendation: stats.recommendation,
+      flakeRate: stats.flakeRate
     };
   });
+
+  // Severity ranking: flaky > broken > watch > stable
+  const severityScore: Record<FlakeVerdict, number> = {
+    flaky: 4,
+    broken: 3,
+    watch: 2,
+    stable: 1
+  };
+
+  assessedTests.sort((a, b) => {
+    const scoreDiff = severityScore[b.verdict] - severityScore[a.verdict];
+    if (scoreDiff !== 0) return scoreDiff;
+
+    const rateDiff = (b.flakeRate || 0) - (a.flakeRate || 0);
+    if (rateDiff !== 0) return rateDiff;
+
+    const flipsDiff = b.sameShaFlips - a.sameShaFlips;
+    if (flipsDiff !== 0) return flipsDiff;
+
+    return b.totalRuns - a.totalRuns;
+  });
+
+  return assessedTests.slice(0, limit);
 }

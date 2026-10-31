@@ -11,13 +11,13 @@ router.get('/', async (req: Request, res: Response) => {
     if (isDbConnected()) {
       const db = getDb();
       const tests = await aggregateFlakyTests(db, projectId, 50);
-      if (tests.length > 0) {
-        return res.json({ tests });
-      }
+      // Honest response: return real database contents (even if empty)
+      return res.json({ tests, isDemoData: false });
     }
 
-    // High fidelity fallback for demo mode
+    // High fidelity fallback for demo mode ONLY when DB is disconnected
     return res.json({
+      isDemoData: true,
       tests: [
         {
           testId: 'Billing Controller › calculates discounted subscription invoice',

@@ -4,8 +4,10 @@ import {
   aggregateTopRecurringFailures,
   aggregateCategoryTrends,
   aggregateMttr,
-  aggregateFlakyTests
+  aggregateFlakyTests,
+  aggregateRecurringRate
 } from '../aggregations/index.js';
+import { reconcileSignatureStatuses } from '../history/historyService.js';
 
 const router = Router();
 
@@ -16,11 +18,15 @@ router.get('/overview', async (req: Request, res: Response) => {
     if (isDbConnected()) {
       const db = getDb();
 
-      const [topRecurring, categoryTrends, mttrStats, flakyStats] = await Promise.all([
+      // Ensure signature statuses are reconciled before computing metrics
+      await reconcileSignatureStatuses(db, projectId);
+
+      const [topRecurring, categoryTrends, mttrStats, flakyStats, recurringRateResult] = await Promise.all([
         aggregateTopRecurringFailures(db, projectId, 7, 5),
         aggregateCategoryTrends(db, projectId, 14),
         aggregateMttr(db, projectId),
-        aggregateFlakyTests(db, projectId, 50)
+        aggregateFlakyTests(db, projectId, 50),
+        aggregateRecurringRate(db, projectId, 7)
       ]);
 
       const sevenDaysAgo = new Date();
@@ -31,28 +37,26 @@ router.get('/overview', async (req: Request, res: Response) => {
         createdAt: { $gte: sevenDaysAgo }
       });
 
-      const recurringFailuresCount = topRecurring.reduce((acc, curr) => acc + (curr.count > 1 ? curr.count : 0), 0);
-      const recurringRatePct = totalFailures7d > 0
-        ? Math.min(100, Math.round((recurringFailuresCount / totalFailures7d) * 100))
-        : 28;
-
       const flakyCount = flakyStats.filter((t) => t.verdict === 'flaky').length;
 
+      // Honest analytics: 0 is valid. Never replace 0 with fabricated fallback numbers!
       return res.json({
         kpis: {
-          totalFailures7d: totalFailures7d || 14,
-          recurringRatePct: recurringRatePct || 42,
-          flakyTestsCount: flakyCount || 3,
-          mttrHours: mttrStats.averageMttrHours || 2.1
+          totalFailures7d,
+          recurringRatePct: recurringRateResult.recurringRatePct,
+          flakyTestsCount: flakyCount,
+          mttrHours: mttrStats.averageMttrHours
         },
         topRecurring,
         categoryTrends,
-        flakyCount
+        flakyCount,
+        isDemoData: false
       });
     }
 
-    // High fidelity fallback for demo mode if DB is connecting
+    // High fidelity fallback for demo mode ONLY when DB is disconnected
     return res.json({
+      isDemoData: true,
       kpis: {
         totalFailures7d: 18,
         recurringRatePct: 44,
