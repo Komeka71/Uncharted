@@ -1,0 +1,24 @@
+{
+  "name": "culprit-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/core",
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace=apps/api run dev",
+    "dev:web": "npm --workspace=apps/web run dev",
+    "build:core": "npm --workspace=packages/core run build",
+    "build:api": "npm --workspace=apps/api run build",
+    "build:web": "npm --workspace=apps/web run build",
+    "build": "npm run build:core && npm run build:api && npm run build:web",
+    "test:core": "npm --workspace=packages/core run test",
+    "test": "npm run test:core",
+    "check": "npm --workspace=packages/core run typecheck && npm --workspace=apps/api run typecheck && npm --workspace=apps/web run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #040806;
+  --surface: rgba(255, 255, 255, 0.03);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --border: rgba(43, 227, 127, 0.16);
+  --accent: #2BE37F;
+  --accent-soft: rgba(43, 227, 127, 0.12);
+  --text: #E8F5EC;
+  --muted: #8AA394;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  overflow-x: hidden;
+}
+
+/* Cyber dotted matrix background grid (as seen in inspiration image) */
+.cyber-grid {
+  background-image: radial-gradient(rgba(43, 227, 127, 0.13) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Glassmorphic card styling with glowing green border */
+.glass-panel {
+  background: rgba(10, 20, 14, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(43, 227, 127, 0.16);
+  border-radius: 1rem;
+}
+
+.glass-panel-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-panel-hover:hover {
+  border-color: rgba(43, 227, 127, 0.4);
+  box-shadow: 0 0 25px -5px rgba(43, 227, 127, 0.2);
+  transform: translateY(-2px);
+}
+
+/* Glowing pill badge */
+.badge-glow {
+  border: 1px solid rgba(43, 227, 127, 0.3);
+  background: rgba(43, 227, 127, 0.08);
+  color: #2BE37F;
+}
+
+/* Monospace code scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(43, 227, 127, 0.25);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(43, 227, 127, 0.5);
+}
