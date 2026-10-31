@@ -11,9 +11,11 @@ const __dirname = dirname(__filename);
 describe('Secret Redactor', () => {
   test('redacts all token types and connection strings from secrets_in_log.log', () => {
     const fixturePath = join(__dirname, '../fixtures/secrets_in_log.log');
-    const raw = readFileSync(fixturePath, 'utf8');
+    // const raw = readFileSync(fixturePath, 'utf8');
+    const googleApiKey = 'AIza' + 'A'.repeat(35);
+    const raw = readFileSync(fixturePath, 'utf8')
+      .replace('GOOGLE_API_KEY_TEST_PLACEHOLDER', googleApiKey);
     const originalLineCount = raw.split(/\r?\n/).length;
-
     const res = redactSecrets(raw);
 
     // Line count must be strictly preserved
@@ -22,8 +24,11 @@ describe('Secret Redactor', () => {
     // Secrets must be redacted
     assert.strictEqual(res.cleanedText.includes('SuperSecretPassword123'), false, 'Password must not appear');
     assert.strictEqual(res.cleanedText.includes('AKIAIOSFODNN7EXAMPLE'), false, 'AWS key must not appear');
+
     assert.strictEqual(res.cleanedText.includes('ghp_A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8'), false, 'GitHub token must not appear');
-    assert.strictEqual(res.cleanedText.includes('AIzaSyD9x8w7v6u5t4s3r2q1p0o9n8m7l6k5j4i'), false, 'Google API key must not appear');
+    assert.strictEqual(res.cleanedText.includes(googleApiKey), false, 'Google API key must not appear');
+    //assert.strictEqual(res.cleanedText.includes('GOOGLE_API_KEY_TEST_PLACEHOLDER'), false, 'Google API key must not appear');
+    // assert.strictEqual(res.cleanedText.includes('AIzaSyD9x8w7v6u5t4s3r2q1p0o9n8m7l6k5j4i'), false, 'Google API key must not appear');
     assert.strictEqual(res.cleanedText.includes('BEGIN RSA PRIVATE KEY'), false, 'Private key header must not appear');
 
     // Redaction count must be positive
