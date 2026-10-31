@@ -18,49 +18,60 @@ import {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [liveConnected, setLiveConnected] = useState(true);
+  const [liveConnected, setLiveConnected] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [noticeIsError, setNoticeIsError] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [simulating, setSimulating] = useState(false);
 
   useEffect(() => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-    try {
-      const eventSource = new EventSource(`${apiUrl}/api/stream`);
-      eventSource.onopen = () => setLiveConnected(true);
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'new_failure' || data.type === 'diagnosis_ready') {
-            showNotice(`⚡ Real-time Event: ${data.type.replace('_', ' ')} (${data.signature || ''})`);
-          }
-        } catch (e) {}
-      };
-      eventSource.onerror = () => setLiveConnected(false);
+    const eventSource = new EventSource(`${apiUrl}/api/stream`);
+    const refreshDashboard = (event: Event) => {
+      try {
+        const data = JSON.parse((event as MessageEvent).data);
+        window.dispatchEvent(new Event('culprit:dashboard-refresh'));
+        showNotice(`Real-time event: ${data.type || event.type}${data.signature ? ` (${data.signature})` : ''}`);
+      } catch (error) {
+        console.error('[SSE] Could not process update:', error);
+      }
+    };
 
-      return () => eventSource.close();
-    } catch (e) {
-      setLiveConnected(false);
-    }
+    eventSource.onopen = () => setLiveConnected(true);
+    eventSource.onmessage = () => setLiveConnected(true);
+    eventSource.addEventListener('new_failure', refreshDashboard);
+    eventSource.addEventListener('diagnosis_ready', refreshDashboard);
+    eventSource.onerror = () => setLiveConnected(false);
+
+    return () => {
+      eventSource.removeEventListener('new_failure', refreshDashboard);
+      eventSource.removeEventListener('diagnosis_ready', refreshDashboard);
+      eventSource.close();
+    };
   }, []);
 
-  const showNotice = (msg: string) => {
+  const showNotice = (msg: string, isError = false) => {
     setActionNotice(msg);
+    setNoticeIsError(isError);
     setTimeout(() => setActionNotice(null), 4000);
   };
 
   const handleSeedDemo = async () => {
-    setSimulating(true);
+    setSeeding(true);
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
       const res = await fetch(`${apiUrl}/api/demo/seed`, { method: 'POST' });
-      if (res.ok) {
-        showNotice('✅ Demo project seeded with 40 runs, regressions, and flaky tests!');
-        window.location.reload();
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message || `Seeding failed with status ${res.status}`);
       }
+      showNotice(data.message || 'Demo data is ready.');
+      window.dispatchEvent(new Event('culprit:dashboard-refresh'));
     } catch (err) {
-      showNotice('Demo seeded (memory mode)');
+      const message = err instanceof Error ? err.message : 'Unable to seed demo data.';
+      showNotice(message, true);
     } finally {
-      setSimulating(false);
+      setSeeding(false);
     }
   };
 
@@ -69,15 +80,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
       const res = await fetch(`${apiUrl}/api/demo/simulate/${scenario}`, { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        showNotice(`⚡ Simulated failing run: ${data.scenario} -> ${data.diagnosis?.title || 'Analyzed'}`);
-        setTimeout(() => {
-          window.location.href = `/app/failures/${data.failureId}`;
-        }, 1200);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message || `Simulation failed with status ${res.status}`);
       }
+      showNotice(`Simulated failing run: ${data.scenario} -> ${data.diagnosis?.title || 'Analyzed'}`);
+      setTimeout(() => {
+        window.location.href = `/app/failures/${data.failureId}`;
+      }, 1200);
     } catch (err) {
-      showNotice('Simulation complete');
+      showNotice(err instanceof Error ? err.message : 'Unable to simulate run.', true);
     } finally {
       setSimulating(false);
     }
@@ -86,10 +98,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const handleReset = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-      await fetch(`${apiUrl}/api/demo/reset`, { method: 'POST' });
-      showNotice('Demo state reset to clean initial state');
+      const res = await fetch(`${apiUrl}/api/demo/reset`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message || `Reset failed with status ${res.status}`);
+      }
+      showNotice(data.message || 'Demo state reset.');
       window.location.reload();
-    } catch (e) {}
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : 'Unable to reset demo data.', true);
+    }
   };
 
   const navItems = [
@@ -171,12 +189,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={handleSeedDemo}
-                disabled={simulating}
-                className="btn-primary min-h-[36px] py-1.5 px-3.5 text-xs font-semibold cursor-pointer shadow-sm disabled:opacity-50"
-                title="Seed demo project with 40 runs and regressions"
+                disabled={seeding || simulating}
+                aria-busy={seeding}
+                className="btn-primary min-h-[36px] py-1.5 px-3.5 text-xs font-semibold cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-wait"
+                title="Seed persisted demo runs, failures, and test results"
               >
                 <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Seed Demo</span>
+                <span>{seeding ? 'Seeding...' : 'Seed Demo'}</span>
               </button>
 
               <select
@@ -187,7 +206,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     e.target.value = '';
                   }
                 }}
-                disabled={simulating}
+                disabled={simulating || seeding}
                 className="px-3 py-1.5 rounded-lg text-xs font-mono bg-surface-2 text-text border border-border/70 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent cursor-pointer min-h-[36px]"
               >
                 <option value="">⚡ Simulate Run...</option>
@@ -214,8 +233,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Global Toast Notification */}
         {actionNotice && (
           <div
-            role="status"
-            className="bg-accent/15 border-b border-accent/30 py-2 px-6 text-center text-xs text-accent font-mono animate-in slide-in-from-top-2 duration-200"
+            role={noticeIsError ? 'alert' : 'status'}
+            className={`border-b py-2 px-6 text-center text-xs font-mono animate-in slide-in-from-top-2 duration-200 ${
+              noticeIsError
+                ? 'bg-danger/15 border-danger/30 text-danger'
+                : 'bg-accent/15 border-accent/30 text-accent'
+            }`}
           >
             {actionNotice}
           </div>

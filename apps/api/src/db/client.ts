@@ -22,7 +22,7 @@ export async function connectDb(): Promise<Db> {
     console.log(`[MongoDB] Connected successfully to database: ${db.databaseName}`);
     return db;
   } catch (err: any) {
-    console.warn(`[MongoDB] Warning: Could not connect to MongoDB at ${env.MONGODB_URI}: ${err.message}`);
+    console.error(`[MongoDB] Connection failed: ${err.message}`);
     isConnected = false;
     throw err;
   }

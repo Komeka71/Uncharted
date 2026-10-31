@@ -188,3 +188,138 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* Fix native dropdown visibility — dark theme */
+select {
+  color-scheme: dark;
+  background-color: #071510 !important;
+  color: #e8f5ef !important;
+  border-color: #176b50;
+}
+
+select option {
+  background-color: #071510 !important;
+  color: #e8f5ef !important;
+}
+
+select option:checked {
+  background-color: #145c45 !important;
+  color: #ffffff !important;
+}
+
+select option:hover {
+  background-color: #104b38 !important;
+  color: #ffffff !important;
+}
+
+/* =================================
+   ORIGIN - READABILITY FIX
+================================= */
+
+/* Diagnosis panel */
+.diagnosis-panel {
+  background: #0b1914 !important;
+  border: 1px solid #1e8060 !important;
+  color: #e8f5ef !important;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.diagnosis-panel h1,
+.diagnosis-panel h2,
+.diagnosis-panel h3,
+.diagnosis-panel p,
+.diagnosis-panel span {
+  color: #e8f5ef;
+}
+
+/* Category and confidence labels */
+.diagnosis-panel .category,
+.diagnosis-panel .confidence {
+  color: #35d6a0 !important;
+}
+
+/* Suspect commit and flaky test cards */
+.diagnosis-panel .info-card {
+  background: #14251e !important;
+  border: 1px solid #28775c !important;
+  color: #e8f5ef !important;
+}
+
+.diagnosis-panel .info-card p,
+.diagnosis-panel .info-card span {
+  color: #b8cfc3 !important;
+}
+
+/* Command / suggested fix strip */
+.diagnosis-panel .command-box {
+  background: #123c2e !important;
+  border: 1px solid #269b72 !important;
+  color: #ffffff !important;
+}
+
+.diagnosis-panel .command-box code {
+  color: #ffffff !important;
+}
+
+/* =================================
+   CHARTS - READABILITY FIX
+================================= */
+
+.chart-card {
+  background: #091711 !important;
+  border: 1px solid #176b50 !important;
+  border-radius: 16px;
+  color: #e8f5ef !important;
+}
+
+.chart-card h2,
+.chart-card h3 {
+  color: #e8f5ef !important;
+}
+
+/* Recharts axis labels */
+.chart-card .recharts-cartesian-axis-tick-value {
+  fill: #b8cfc3 !important;
+  font-size: 12px;
+}
+
+/* Axis titles */
+.chart-card .recharts-label {
+  fill: #d5e9df !important;
+}
+
+/* Grid lines */
+.chart-card .recharts-cartesian-grid line {
+  stroke: #254438 !important;
+  stroke-dasharray: 4 4;
+}
+
+/* Axis lines */
+.chart-card .recharts-cartesian-axis-line,
+.chart-card .recharts-cartesian-axis-tick-line {
+  stroke: #527666 !important;
+}
+
+/* Chart tooltip */
+.chart-card .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: #10251b !important;
+  border: 1px solid #269b72 !important;
+  border-radius: 10px;
+  color: #ffffff !important;
+}
+
+.chart-card .recharts-tooltip-label,
+.chart-card .recharts-tooltip-item {
+  color: #ffffff !important;
+}
+
+/* Chart legend */
+.chart-card .recharts-legend-item-text {
+  color: #d5e9df !important;
+}
+
+/* Empty chart messages */
+.chart-card .empty-state {
+  color: #a9c2b5 !important;
+}

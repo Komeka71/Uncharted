@@ -2,23 +2,44 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Cpu, AlertTriangle, ShieldCheck, HelpCircle, ArrowRight } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
+
+interface FlakyTest {
+  testId: string;
+  verdict: 'flaky' | 'broken' | 'watch' | 'stable';
+  totalRuns: number;
+  sameShaFlips: number;
+  flips: number;
+  historySparkline: ('pass' | 'fail')[];
+  executionHistory: {
+    runId: string;
+    headSha: string;
+    outcome: 'pass' | 'fail' | 'skipped';
+    timestamp: string;
+  }[];
+  lastErrorMessage?: string;
+  recommendation: string;
+}
 
 export default function FlakyTestsPage() {
-  const [tests, setTests] = useState<any[]>([]);
+  const [tests, setTests] = useState<FlakyTest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadFlaky() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
       try {
         const res = await fetch(`${apiUrl}/api/flaky?projectId=demo-shop`);
-        if (res.ok) {
-          const json = await res.json();
-          setTests(json.tests || []);
+        const json = await res.json();
+        if (!res.ok) {
+          throw new Error(json.error?.message || `Unable to load test results (${res.status}).`);
         }
+        setTests(json.tests || []);
       } catch (err) {
-        console.warn('Flaky fetch error:', err);
+        const message = err instanceof Error ? err.message : 'Unable to load test results.';
+        setError(message);
+        console.error('[Flaky tests] Data request failed:', err);
       } finally {
         setLoading(false);
       }
@@ -36,9 +57,9 @@ export default function FlakyTestsPage() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
-      <div className="flex items-center justify-between pb-4 border-b border-border/50">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/50">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="font-display text-xl sm:text-2xl font-bold text-text">Flaky vs Broken Intelligence</h1>
             <span className="chip text-[11px] font-mono py-0.5 px-2.5">
               30-Execution Window
@@ -58,85 +79,91 @@ export default function FlakyTestsPage() {
         </Link>
       </div>
 
-      {/* Flaky Table Card */}
-      <div className="glass-panel overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-border/40 bg-surface-2/60 text-muted font-mono uppercase text-[11px]">
-                <th className="py-3.5 px-4 font-semibold">Test Identifier</th>
-                <th className="py-3.5 px-4 font-semibold">Verdict</th>
-                <th className="py-3.5 px-4 font-semibold text-center">Same-SHA Flips</th>
-                <th className="py-3.5 px-4 font-semibold text-center">Outcome Flips</th>
-                <th className="py-3.5 px-4 font-semibold text-center">Recent History (Sparkline)</th>
-                <th className="py-3.5 px-4 font-semibold">Recommendation</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/30">
-              {tests.map((t, idx) => (
-                <tr key={idx} className="hover:bg-surface-2/40 transition-colors">
-                  {/* Test ID & error */}
-                  <td className="py-3.5 px-4 font-mono">
-                    <div className="font-bold text-text truncate max-w-xs">{t.testId}</div>
-                    {t.lastErrorMessage && (
-                      <div className="text-[10px] text-muted truncate max-w-xs mt-0.5">
-                        {t.lastErrorMessage}
-                      </div>
-                    )}
-                  </td>
-
-                  {/* Verdict badge */}
-                  <td className="py-3.5 px-4">
-                    <span
-                      className={`inline-block px-2.5 py-0.5 rounded-full border text-[10px] font-mono font-bold uppercase tracking-wide ${
-                        verdictStyles[t.verdict] || verdictStyles.stable
-                      }`}
-                    >
-                      {t.verdict}
-                    </span>
-                  </td>
-
-                  {/* Same-SHA flips */}
-                  <td className="py-3.5 px-4 text-center font-mono">
-                    {t.sameShaFlips > 0 ? (
-                      <span className="text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
-                        {t.sameShaFlips} flip(s)
-                      </span>
-                    ) : (
-                      <span className="text-muted">0</span>
-                    )}
-                  </td>
-
-                  {/* Total outcome flips */}
-                  <td className="py-3.5 px-4 text-center font-mono text-muted">
-                    {t.flips || 0}
-                  </td>
-
-                  {/* Sparkline */}
-                  <td className="py-3.5 px-4 text-center">
-                    <div className="inline-flex items-center gap-1">
-                      {t.historySparkline?.map((outcome: 'pass' | 'fail', sIdx: number) => (
-                        <span
-                          key={sIdx}
-                          title={outcome === 'pass' ? 'Pass' : 'Fail'}
-                          className={`w-2 h-3.5 rounded-sm ${
-                            outcome === 'pass' ? 'bg-emerald-400/80' : 'bg-red-400'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </td>
-
-                  {/* Recommendation */}
-                  <td className="py-3.5 px-4 text-xs text-text/90">
-                    <div className="leading-relaxed">{t.recommendation}</div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {error ? (
+        <div role="alert" className="glass-panel border border-danger/40 bg-danger/10 p-5 text-sm text-danger">
+          Test execution data could not be loaded: {error}
         </div>
-      </div>
+      ) : (
+        <div className="glass-panel overflow-hidden border border-border/80">
+          <div className="overflow-x-auto" role="region" aria-label="Flaky test results" tabIndex={0}>
+            <table className="w-full min-w-[980px] text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-border bg-[#10211a] text-text font-mono uppercase text-[11px]">
+                  <th scope="col" className="py-3.5 px-4 font-semibold">Test Identifier</th>
+                  <th scope="col" className="py-3.5 px-4 font-semibold">Verdict</th>
+                  <th scope="col" className="py-3.5 px-4 font-semibold text-center whitespace-nowrap">Same-SHA Flips</th>
+                  <th scope="col" className="py-3.5 px-4 font-semibold text-center whitespace-nowrap">Outcome Flips</th>
+                  <th scope="col" className="py-3.5 px-4 font-semibold text-center whitespace-nowrap">Recent Execution History</th>
+                  <th scope="col" className="py-3.5 px-4 font-semibold">Recommendation</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/70">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 px-4 text-center text-muted" role="status">
+                      Loading test execution results...
+                    </td>
+                  </tr>
+                ) : tests.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 px-4 text-center">
+                      <div className="font-semibold text-text">No test execution data yet</div>
+                      <p className="mt-1 text-muted">
+                        Ingest CI test results or seed the persisted demo data to see classifications.
+                      </p>
+                    </td>
+                  </tr>
+                ) : tests.map((test) => (
+                  <tr key={test.testId} className="hover:bg-surface-2/50 transition-colors">
+                    <td className="py-3.5 px-4 font-mono">
+                      <div className="font-bold text-text whitespace-normal break-words max-w-xs">{test.testId}</div>
+                      <div className="text-[10px] text-muted mt-0.5">{test.totalRuns} executions in window</div>
+                      {test.lastErrorMessage && (
+                        <div className="text-[10px] text-muted whitespace-normal break-words max-w-xs mt-0.5">
+                          {test.lastErrorMessage}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full border text-[10px] font-mono font-bold uppercase tracking-wide ${verdictStyles[test.verdict]}`}>
+                        {test.verdict}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono">
+                      {test.sameShaFlips > 0 ? (
+                        <span className="text-amber-300 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/30 whitespace-nowrap">
+                          {test.sameShaFlips} flip(s)
+                        </span>
+                      ) : <span className="text-muted">0</span>}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono text-text">{test.flips}</td>
+                    <td className="py-3.5 px-4 text-center">
+                      <div className="inline-flex items-center gap-1" aria-label="Recent test outcomes, oldest first">
+                        {test.executionHistory.map((execution, index) => (
+                          <span
+                            key={`${execution.runId}-${index}`}
+                            title={`${execution.outcome} - ${execution.headSha} - ${new Date(execution.timestamp).toLocaleString()}`}
+                            className={`w-2 h-3.5 rounded-sm ${
+                              execution.outcome === 'pass'
+                                ? 'bg-emerald-400'
+                                : execution.outcome === 'fail'
+                                  ? 'bg-red-400'
+                                  : 'bg-slate-400'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 text-xs text-text/90 whitespace-normal min-w-[240px]">
+                      <div className="leading-relaxed">{test.recommendation}</div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

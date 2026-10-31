@@ -7,7 +7,7 @@ export async function initDb(): Promise<Db | null> {
   try {
     db = await connectDb();
   } catch (err: any) {
-    console.warn(`[initDb] MongoDB connection failed: ${err.message}. Running in offline/memory fallback mode.`);
+    console.warn(`[initDb] MongoDB unavailable; persistent API operations will be disabled: ${err.message}`);
     return null;
   }
 
@@ -89,6 +89,6 @@ export async function initDb(): Promise<Db | null> {
     return db;
   } catch (err: any) {
     console.error(`[initDb] Error configuring database: ${err.message}`);
-    return db;
+    throw err;
   }
 }
