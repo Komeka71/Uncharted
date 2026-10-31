@@ -188,3 +188,26 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* Fix native dropdown visibility — dark theme */
+select {
+  color-scheme: dark;
+  background-color: #071510 !important;
+  color: #e8f5ef !important;
+  border-color: #176b50;
+}
+
+select option {
+  background-color: #071510 !important;
+  color: #e8f5ef !important;
+}
+
+select option:checked {
+  background-color: #145c45 !important;
+  color: #ffffff !important;
+}
+
+select option:hover {
+  background-color: #104b38 !important;
+  color: #ffffff !important;
+}

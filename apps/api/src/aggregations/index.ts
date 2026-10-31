@@ -98,8 +98,12 @@ export async function aggregateCategoryTrends(
   projectId: string,
   days = 14
 ): Promise<CategoryTrendResult[]> {
-  const sinceDate = new Date();
-  sinceDate.setDate(sinceDate.getDate() - days);
+  const today = new Date();
+  const sinceDate = new Date(Date.UTC(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate() - days + 1
+  ));
 
   const pipeline = [
     {
@@ -134,36 +138,75 @@ export async function aggregateCategoryTrends(
 
   const results = await db.collection('failures').aggregate(pipeline).toArray();
 
-  return results.map((r: any) => {
+  const trends = new Map<string, CategoryTrendResult>();
+  for (const r of results) {
     const categories: Record<string, number> = {};
     for (const item of r.items) {
       categories[item.category] = item.count;
     }
-    return {
-      date: r._id,
+    trends.set(r._id, {
+      date: r._id as string,
       categories,
       total: r.total
-    };
-  });
+    });
+  }
+
+  for (let offset = days - 1; offset >= 0; offset--) {
+    const date = new Date(Date.UTC(
+      today.getUTCFullYear(),
+      today.getUTCMonth(),
+      today.getUTCDate() - offset
+    ));
+    const key = date.toISOString().slice(0, 10);
+    if (!trends.has(key)) {
+      trends.set(key, { date: key, categories: {}, total: 0 });
+    }
+  }
+
+  return [...trends.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export interface MttrResult {
-  averageMttrHours: number;
+  averageMttrHours: number | null;
   totalResolvedSignatures: number;
 }
 
-export async function aggregateMttr(db: Db, projectId: string): Promise<MttrResult> {
+export async function aggregateMttr(db: Db, projectId: string, days = 7): Promise<MttrResult> {
+  const sinceDate = new Date();
+  sinceDate.setDate(sinceDate.getDate() - days);
   const pipeline = [
     {
       $match: {
         projectId,
-        status: 'resolved'
+        status: 'resolved',
+        resolvedAt: { $gte: sinceDate }
       }
     },
     {
+      $lookup: {
+        from: 'failures',
+        let: { project: '$projectId', signature: '$signature' },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$projectId', '$$project'] },
+                  { $eq: ['$signature', '$$signature'] }
+                ]
+              }
+            }
+          },
+          { $limit: 1 }
+        ],
+        as: 'failureRecords'
+      }
+    },
+    { $match: { 'failureRecords.0': { $exists: true } } },
+    {
       $project: {
-        startTime: { $ifNull: ['$firstSeen', { $ifNull: ['$firstSeenAt', '$createdAt'] }] },
-        endTime: { $ifNull: ['$resolvedAt', { $ifNull: ['$lastSeen', '$lastSeenAt'] }] }
+        startTime: { $ifNull: ['$firstSeenAt', '$firstSeen'] },
+        endTime: '$resolvedAt'
       }
     },
     {
@@ -194,7 +237,7 @@ export async function aggregateMttr(db: Db, projectId: string): Promise<MttrResu
   const res = await db.collection('signatures').aggregate(pipeline).toArray();
   if (res.length === 0 || !res[0].avgMs) {
     // Honest reporting: 0 resolved signatures, 0 MTTR
-    return { averageMttrHours: 0, totalResolvedSignatures: 0 };
+    return { averageMttrHours: null, totalResolvedSignatures: 0 };
   }
 
   const hours = Math.round((res[0].avgMs / (1000 * 60 * 60)) * 10) / 10;
@@ -267,6 +310,12 @@ export interface FlakyAggregationResult {
   sameShaFlips: number;
   flips: number;
   historySparkline: ('pass' | 'fail')[];
+  executionHistory: {
+    runId: string;
+    headSha: string;
+    outcome: 'pass' | 'fail' | 'skipped';
+    timestamp: Date;
+  }[];
   verdict: FlakeVerdict;
   lastErrorMessage?: string;
   recommendation: string;
@@ -280,7 +329,7 @@ export async function aggregateFlakyTests(
 ): Promise<FlakyAggregationResult[]> {
   const pipeline = [
     { $match: { projectId } },
-    { $sort: { ts: 1 } },
+    { $sort: { ts: 1, _id: 1 } },
     {
       $group: {
         _id: '$testId',
@@ -323,7 +372,13 @@ export async function aggregateFlakyTests(
       verdict: stats.verdict,
       lastErrorMessage: stats.sampleErrorMessage,
       recommendation: stats.recommendation,
-      flakeRate: stats.flakeRate
+      flakeRate: stats.flakeRate,
+      executionHistory: rawRecords.slice(-30).map((record: any) => ({
+        runId: record.runId || '',
+        headSha: record.headSha || '',
+        outcome: record.outcome,
+        timestamp: record.ts instanceof Date ? record.ts : new Date(record.ts)
+      }))
     };
   });
 

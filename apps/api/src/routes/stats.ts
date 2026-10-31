@@ -15,84 +15,65 @@ router.get('/overview', async (req: Request, res: Response) => {
   try {
     const projectId = (req.query.projectId as string) || 'demo-shop';
 
-    if (isDbConnected()) {
-      const db = getDb();
-
-      // Ensure signature statuses are reconciled before computing metrics
-      await reconcileSignatureStatuses(db, projectId);
-
-      const [topRecurring, categoryTrends, mttrStats, flakyStats, recurringRateResult] = await Promise.all([
-        aggregateTopRecurringFailures(db, projectId, 7, 5),
-        aggregateCategoryTrends(db, projectId, 14),
-        aggregateMttr(db, projectId),
-        aggregateFlakyTests(db, projectId, 50),
-        aggregateRecurringRate(db, projectId, 7)
-      ]);
-
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-      const totalFailures7d = await db.collection('failures').countDocuments({
-        projectId,
-        createdAt: { $gte: sevenDaysAgo }
-      });
-
-      const flakyCount = flakyStats.filter((t) => t.verdict === 'flaky').length;
-
-      // Honest analytics: 0 is valid. Never replace 0 with fabricated fallback numbers!
-      return res.json({
-        kpis: {
-          totalFailures7d,
-          recurringRatePct: recurringRateResult.recurringRatePct,
-          flakyTestsCount: flakyCount,
-          mttrHours: mttrStats.averageMttrHours
-        },
-        topRecurring,
-        categoryTrends,
-        flakyCount,
-        isDemoData: false
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        error: {
+          code: 'DB_OFFLINE',
+          message: 'Dashboard statistics require MongoDB. Check the API logs for the connection failure.'
+        }
       });
     }
 
-    // High fidelity fallback for demo mode ONLY when DB is disconnected
+    const db = getDb();
+    await reconcileSignatureStatuses(db, projectId);
+
+    const since = new Date();
+    since.setDate(since.getDate() - 7);
+    const [
+      topRecurring,
+      categoryTrends,
+      mttrStats,
+      flakyStats,
+      recurringRateResult,
+      totalFailures7d,
+      failureRuns
+    ] = await Promise.all([
+      aggregateTopRecurringFailures(db, projectId, 7, 5),
+      aggregateCategoryTrends(db, projectId, 14),
+      aggregateMttr(db, projectId, 7),
+      aggregateFlakyTests(db, projectId, Number.MAX_SAFE_INTEGER),
+      aggregateRecurringRate(db, projectId, 7),
+      db.collection('failures').countDocuments({
+        projectId,
+        createdAt: { $gte: since }
+      }),
+      db.collection('failures').find(
+        { projectId, createdAt: { $gte: since } },
+        { projection: { runId: 1 } }
+      ).toArray()
+    ]);
+
+    const runIds = [...new Set(failureRuns.map((failure) => failure.runId).filter(Boolean))];
+    const runs = runIds.length
+      ? await db.collection('runs').find(
+          { projectId, runId: { $in: runIds } },
+          { projection: { workflow: 1 } }
+        ).toArray()
+      : [];
+    const workflowCount = new Set(runs.map((run) => run.workflow).filter(Boolean)).size;
+    const flakyCount = flakyStats.filter((test) => test.verdict === 'flaky').length;
+
     return res.json({
-      isDemoData: true,
       kpis: {
-        totalFailures7d: 18,
-        recurringRatePct: 44,
-        flakyTestsCount: 3,
-        mttrHours: 2.1
+        totalFailures7d,
+        workflowCount,
+        recurringRatePct: recurringRateResult.recurringRatePct,
+        flakyTestsCount: flakyCount,
+        mttrHours: mttrStats.averageMttrHours
       },
-      topRecurring: [
-        {
-          signature: 'a7b9c1d2e3f4051a',
-          category: 'dependency',
-          ruleId: 'npm-lock-out-of-sync',
-          count: 6,
-          lastSeenAt: new Date(),
-          status: 'open',
-          sampleEvidence: 'npm ci can only install packages when your package.json and package-lock.json are in sync.'
-        },
-        {
-          signature: 'f4e3d2c1b0a98765',
-          category: 'build_compile',
-          ruleId: 'ts-compile-error',
-          count: 4,
-          lastSeenAt: new Date(Date.now() - 3600000),
-          status: 'open',
-          sampleEvidence: "src/services/authService.ts(45,21): error TS2339: Property 'role' does not exist"
-        }
-      ],
-      categoryTrends: [
-        { date: '2026-10-25', categories: { dependency: 2, test_failure: 1 }, total: 3 },
-        { date: '2026-10-26', categories: { build_compile: 3, lint_format: 1 }, total: 4 },
-        { date: '2026-10-27', categories: { dependency: 1, test_failure: 2 }, total: 3 },
-        { date: '2026-10-28', categories: { config_env: 2, infra_runner: 1 }, total: 3 },
-        { date: '2026-10-29', categories: { build_compile: 2, network_transient: 1 }, total: 3 },
-        { date: '2026-10-30', categories: { dependency: 2, test_failure: 1 }, total: 3 },
-        { date: '2026-10-31', categories: { build_compile: 1, docker_container: 1 }, total: 2 }
-      ],
-      flakyCount: 3
+      topRecurring,
+      categoryTrends,
+      flakyCount
     });
   } catch (err: any) {
     return res.status(500).json({ error: { code: 'STATS_ERROR', message: err.message } });

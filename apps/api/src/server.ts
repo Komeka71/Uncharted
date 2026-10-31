@@ -52,7 +52,7 @@ app.get('/health', (_req: Request, res: Response) => {
     app: 'Culprit API',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    database: isDbConnected() ? 'connected' : 'offline_memory_fallback',
+    database: isDbConnected() ? 'connected' : 'disconnected',
     version: '1.0.0',
     hackathon: 'UNCHARTED 2026'
   });

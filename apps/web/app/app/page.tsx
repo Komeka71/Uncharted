@@ -27,73 +27,60 @@ import {
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [failures, setFailures] = useState<any[]>([]);
+  const [failuresTotal, setFailuresTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadData() {
+      setLoading(true);
+      setError(null);
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
       try {
         const [statsRes, failuresRes] = await Promise.all([
           fetch(`${apiUrl}/api/stats/overview?projectId=demo-shop`),
-          fetch(`${apiUrl}/api/failures?projectId=demo-shop`)
+          fetch(`${apiUrl}/api/failures?projectId=demo-shop&days=7&status=analyzed`)
         ]);
 
-        if (statsRes.ok) {
-          const statsData = await statsRes.json();
-          setStats(statsData);
+        const [statsData, failuresData] = await Promise.all([
+          statsRes.json(),
+          failuresRes.json()
+        ]);
+        if (!statsRes.ok || !failuresRes.ok) {
+          throw new Error(
+            statsData.error?.message ||
+            failuresData.error?.message ||
+            'Unable to load dashboard data.'
+          );
         }
-        if (failuresRes.ok) {
-          const failuresData = await failuresRes.json();
-          setFailures(failuresData.failures || []);
-        }
+        setStats(statsData);
+        setFailures(failuresData.failures || []);
+        setFailuresTotal(failuresData.total ?? failuresData.failures?.length ?? 0);
       } catch (err) {
-        console.warn('Dashboard fetch fallback:', err);
+        const message = err instanceof Error ? err.message : 'Unable to load dashboard data.';
+        setError(message);
+        console.error('[Dashboard] Data request failed:', err);
       } finally {
         setLoading(false);
       }
     }
 
     loadData();
+    window.addEventListener('culprit:dashboard-refresh', loadData);
+    return () => window.removeEventListener('culprit:dashboard-refresh', loadData);
   }, []);
 
-  const kpis = stats?.kpis || {
-    totalFailures7d: 14,
-    recurringRatePct: 42,
-    flakyTestsCount: 3,
-    mttrHours: 2.1
-  };
-
-  const chartData = (stats?.categoryTrends || [
-    { date: '10/25', total: 3 },
-    { date: '10/26', total: 4 },
-    { date: '10/27', total: 2 },
-    { date: '10/28', total: 5 },
-    { date: '10/29', total: 3 },
-    { date: '10/30', total: 4 },
-    { date: '10/31', total: 2 }
-  ]).map((d: any) => ({
+  const kpis = stats?.kpis;
+  const metricValue = (value: number | null | undefined) => (
+    loading || error ? '—' : value ?? 0
+  );
+  const chartData = (stats?.categoryTrends || []).map((d: any) => ({
     name: d.date.split('-').slice(1).join('/') || d.date,
     failures: d.total
   }));
+  const hasDailyFailures = chartData.some((day: any) => day.failures > 0);
 
-  const topRecurring = stats?.topRecurring || [
-    {
-      signature: 'a7b9c1d2e3f4051a',
-      category: 'dependency',
-      ruleId: 'npm-lock-out-of-sync',
-      count: 6,
-      status: 'open',
-      sampleEvidence: 'npm ci can only install packages when your package.json and package-lock.json are in sync.'
-    },
-    {
-      signature: 'f4e3d2c1b0a98765',
-      category: 'build_compile',
-      ruleId: 'ts-compile-error',
-      count: 4,
-      status: 'regressed',
-      sampleEvidence: "src/services/authService.ts: error TS2339: Property 'role' does not exist"
-    }
-  ];
+  const topRecurring = stats?.topRecurring || [];
 
   const categoryColors: Record<string, string> = {
     dependency: 'text-amber-400 bg-amber-400/10 border-amber-400/30',
@@ -133,6 +120,12 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {error && (
+        <div role="alert" className="glass-panel border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
+          Dashboard data could not be loaded: {error}
+        </div>
+      )}
+
       {/* 4 KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {/* KPI 1 */}
@@ -144,10 +137,13 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="font-display text-2xl sm:text-3xl font-bold font-mono text-text">
-            {kpis.totalFailures7d}
+            {metricValue(kpis?.totalFailures7d)}
           </div>
           <div className="text-[11px] text-muted flex items-center gap-1">
-            <span className="text-danger font-semibold font-mono">14</span> across 3 workflows
+            <span className="text-danger font-semibold font-mono">
+              {metricValue(kpis?.totalFailures7d)}
+            </span>
+            {' '}across {metricValue(kpis?.workflowCount)} workflows
           </div>
         </div>
 
@@ -160,7 +156,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="font-display text-2xl sm:text-3xl font-bold font-mono text-warn">
-            {kpis.recurringRatePct}%
+            {metricValue(kpis?.recurringRatePct)}%
           </div>
           <div className="text-[11px] text-muted">
             Identical recurring signatures
@@ -176,7 +172,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="font-display text-2xl sm:text-3xl font-bold font-mono text-accent">
-            {kpis.flakyTestsCount}
+            {metricValue(kpis?.flakyTestsCount)}
           </div>
           <div className="text-[11px] text-muted flex items-center gap-1">
             <Link href="/app/flaky" className="text-accent hover:underline flex items-center gap-1 font-medium">
@@ -195,10 +191,10 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="font-display text-2xl sm:text-3xl font-bold font-mono text-info">
-            {kpis.mttrHours}h
+            {loading || error ? '—' : kpis?.mttrHours == null ? '—' : `${kpis.mttrHours}h`}
           </div>
           <div className="text-[11px] text-muted">
-            Time to subsequent green run
+            For recoveries in the last 7 days
           </div>
         </div>
       </div>
@@ -211,7 +207,9 @@ export default function DashboardPage() {
             <h2 className="font-display text-sm font-bold text-text uppercase tracking-wider font-mono">
               Recent Analyzed Failures
             </h2>
-            <span className="chip text-[11px] py-0.5 px-2">{failures.length} recorded</span>
+            <span className="chip text-[11px] py-0.5 px-2">
+              {loading ? 'Loading…' : error ? 'Unavailable' : `${failures.length} of ${failuresTotal} recorded`}
+            </span>
           </div>
 
           <div className="space-y-3">
@@ -251,6 +249,7 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-4 text-[11px] text-muted font-mono pt-1">
                         <span>Sig: <strong className="text-accent">{f.signature}</strong></span>
                         <span>Seen {f.occurrences}x</span>
+                        <span>Workflow: {f.workflow}</span>
                         <span>Job: {f.jobName}</span>
                       </div>
                     </div>
@@ -264,9 +263,15 @@ export default function DashboardPage() {
             ) : (
               <div className="glass-panel p-8 text-center space-y-3 border border-border/60">
                 <ShieldAlert className="w-8 h-8 text-muted mx-auto" aria-hidden="true" />
-                <div className="font-display text-base font-bold text-text">No Failures Ingested Yet</div>
+                <div className="font-display text-base font-bold text-text">
+                  {loading ? 'Loading recent failures...' : error ? 'Recent failures unavailable' : 'No analyzed failures in this time window'}
+                </div>
                 <p className="text-xs text-muted max-w-sm mx-auto">
-                  Click <strong className="text-accent">&quot;Seed Demo&quot;</strong> in the top bar to populate 40 realistic runs or simulate a failing commit.
+                  {loading
+                    ? 'Recent analyzed failures will appear here when the request completes.'
+                    : error
+                      ? 'Check the API and MongoDB connection, then refresh this page.'
+                      : 'Seed the persisted demo data or connect a project to see analyzed failures here.'}
                 </p>
               </div>
             )}
@@ -285,7 +290,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-3">
-              {topRecurring.map((item: any) => (
+              {topRecurring.length > 0 ? topRecurring.map((item: any) => (
                 <div
                   key={item.signature}
                   className="p-3.5 rounded-xl bg-surface-2 border border-border/50 space-y-1.5"
@@ -309,7 +314,11 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
-              ))}
+              )) : (
+                <p className="py-4 text-center text-xs text-muted">
+                  {loading ? 'Loading recurring failures...' : error ? 'Recurring failure data unavailable.' : 'No recurring signatures in the last 7 days.'}
+                </p>
+              )}
             </div>
           </div>
 
@@ -323,8 +332,9 @@ export default function DashboardPage() {
             </div>
 
             <div className="h-44 w-full pt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+              {hasDailyFailures ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                   <XAxis dataKey="name" stroke="#9DB5A8" fontSize={10} tickLine={false} />
                   <YAxis stroke="#9DB5A8" fontSize={10} tickLine={false} allowDecimals={false} />
                   <Tooltip
@@ -345,8 +355,13 @@ export default function DashboardPage() {
                       />
                     ))}
                   </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-muted">
+                  {loading ? 'Loading daily failures...' : error ? 'Daily failure data unavailable.' : 'No daily failure data in the last 14 days.'}
+                </div>
+              )}
             </div>
           </div>
         </div>

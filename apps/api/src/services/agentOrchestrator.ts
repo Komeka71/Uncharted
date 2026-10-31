@@ -74,6 +74,26 @@ export async function orchestrateAnalysis(
   const deterministicRes = analyzeLogDeterministically(rawLog);
   const { ruleMatch, fingerprint, parsedLog, redactionCount } = deterministicRes;
 
+  if (activeDb) {
+    await activeDb.collection('failures').updateOne(
+      { failureId },
+      {
+        $setOnInsert: {
+          failureId,
+          projectId,
+          runId,
+          jobName,
+          category: ruleMatch.category,
+          ruleId: ruleMatch.ruleId,
+          signature: fingerprint.signature,
+          status: 'analyzing',
+          createdAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+  }
+
   agentSteps.push({
     failureId,
     seq: seq++,
@@ -112,24 +132,26 @@ export async function orchestrateAnalysis(
       });
 
       if (existingSig) {
-        occurrences = (existingSig.occurrences || 1) + 1;
+        const alreadyCounted = (existingSig.recentRunIds || []).includes(runId);
+        occurrences = (existingSig.occurrences || 1) + (alreadyCounted ? 0 : 1);
         if (existingSig.status === 'resolved') {
           isRegression = true;
         }
         knownFix = existingSig.knownFix;
 
-        // Update signature document
-        await activeDb.collection('signatures').updateOne(
-          { projectId, signature: fingerprint.signature },
-          {
-            $inc: { occurrences: 1, regressionCount: isRegression ? 1 : 0 },
-            $set: {
-              lastSeenAt: new Date(),
-              status: isRegression ? 'regressed' : existingSig.status
-            },
-            $push: { recentRunIds: { $each: [runId], $slice: -20 } } as any
-          }
-        );
+        if (!alreadyCounted) {
+          await activeDb.collection('signatures').updateOne(
+            { projectId, signature: fingerprint.signature },
+            {
+              $inc: { occurrences: 1, regressionCount: isRegression ? 1 : 0 },
+              $set: {
+                lastSeenAt: new Date(),
+                status: isRegression ? 'regressed' : existingSig.status
+              },
+              $push: { recentRunIds: { $each: [runId], $slice: -20 } } as any
+            }
+          );
+        }
       } else {
         // First time seeing this signature
         await activeDb.collection('signatures').insertOne({
@@ -147,7 +169,8 @@ export async function orchestrateAnalysis(
         });
       }
     } catch (err: any) {
-      console.warn('[Historian Agent] Database lookup warning:', err.message);
+      console.error('[Historian Agent] Failed to persist signature history:', err.message);
+      throw err;
     }
   }
 
@@ -303,28 +326,31 @@ export async function orchestrateAnalysis(
 
   // Persist to MongoDB
   if (activeDb) {
-    try {
-      await activeDb.collection('diagnoses').insertOne(diagnosis);
-      await activeDb.collection('agentSteps').insertMany(agentSteps);
-      await activeDb.collection('failures').updateOne(
-        { failureId },
-        {
-          $set: {
-            diagnosisId,
-            status: 'analyzed',
-            category: ruleMatch.category,
-            ruleId: ruleMatch.ruleId,
-            signature: fingerprint.signature,
-            transient: ruleMatch.transient,
-            evidence: ruleMatch.evidence,
-            redactionCount
-          }
+    await activeDb.collection('diagnoses').insertOne(diagnosis);
+    await activeDb.collection('agentSteps').insertMany(agentSteps);
+    await activeDb.collection('failures').updateOne(
+      { failureId },
+      {
+        $set: {
+          projectId,
+          runId,
+          jobName,
+          diagnosisId,
+          status: 'analyzed',
+          category: ruleMatch.category,
+          ruleId: ruleMatch.ruleId,
+          signature: fingerprint.signature,
+          transient: ruleMatch.transient,
+          evidence: ruleMatch.evidence,
+          redactionCount
         },
-        { upsert: true }
-      );
-    } catch (err: any) {
-      console.warn('[Reporter Agent] Failed to persist diagnosis in DB:', err.message);
-    }
+        $setOnInsert: {
+          failureId,
+          createdAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
   }
 
   // Broadcast live SSE notification to dashboards
