@@ -1,0 +1,53 @@
+{
+  "projectId": "proj_demo",
+  "signature": "sig_ts_err_1234",
+  "occurrences": [
+    {
+      "runId": "run_101",
+      "projectId": "proj_demo",
+      "signature": "sig_ts_err_1234",
+      "workflow": "ci.yml",
+      "branch": "main",
+      "headSha": "sha1111",
+      "createdAt": "2026-10-25T10:00:00Z"
+    },
+    {
+      "runId": "run_102",
+      "projectId": "proj_demo",
+      "signature": "sig_ts_err_1234",
+      "workflow": "ci.yml",
+      "branch": "main",
+      "headSha": "sha2222",
+      "createdAt": "2026-10-26T12:00:00Z"
+    }
+  ],
+  "scopeRuns": [
+    {
+      "runId": "run_101",
+      "workflow": "ci.yml",
+      "branch": "main",
+      "headSha": "sha1111",
+      "conclusion": "failure",
+      "startedAt": "2026-10-25T10:00:00Z",
+      "completedAt": "2026-10-25T10:05:00Z"
+    },
+    {
+      "runId": "run_102",
+      "workflow": "ci.yml",
+      "branch": "main",
+      "headSha": "sha2222",
+      "conclusion": "failure",
+      "startedAt": "2026-10-26T12:00:00Z",
+      "completedAt": "2026-10-26T12:04:00Z"
+    },
+    {
+      "runId": "run_103",
+      "workflow": "ci.yml",
+      "branch": "main",
+      "headSha": "sha3333",
+      "conclusion": "success",
+      "startedAt": "2026-10-27T14:00:00Z",
+      "completedAt": "2026-10-27T14:06:00Z"
+    }
+  ]
+}
