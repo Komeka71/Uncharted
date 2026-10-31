@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { env } from '../config/env.js';
 import { RuleMatch, EvidenceLine, SuspectCommit } from '@culprit/core';
+import { z } from 'zod';
 
 export interface InvestigatorLLMOutput {
   summary: string;
@@ -14,6 +15,119 @@ export interface InvestigatorLLMOutput {
   isLikelyFlaky?: boolean;
 }
 
+const EvidenceLineSchema = z.number().int().refine((l) => Number.isFinite(l) && l >= 1, {
+  message: 'evidenceLines must be positive integers',
+});
+
+const InvestigatorOutputSchema = z.object({
+  summary: z.string().nonempty('summary must be a non-empty string'),
+  rootCause: z.string().nonempty('rootCause must be a non-empty string'),
+  confidence: z.enum(['low', 'medium', 'high']),
+  evidenceLines: z.array(EvidenceLineSchema),
+  fixSteps: z.array(z.string().nonempty('fixSteps must be non-empty strings')).optional(),
+  patch: z.string().optional(),
+  verifyWith: z.string().optional(),
+  preventWith: z.string().optional(),
+  isLikelyFlaky: z.boolean().optional(),
+});
+
+export function stripCodeFences(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('```')) {
+    const lines = trimmed.split('\n');
+    const inner = lines.slice(1, -1).join('\n');
+    return inner.trim();
+  }
+  return trimmed;
+}
+
+
+/**
+ * Validates parsed LLM output and builds the InvestigatorLLMOutput object.
+ * Throws a controlled error when required fields fail validation or when no
+ * usable evidence/fix steps are available, so the orchestrator's deterministic
+ * fallback can run.
+ *
+ * @param parsed - The raw parsed JSON from the LLM response.
+ * @param validLineNumbers - Set of line numbers that exist in the log window.
+ * @param ruleMatch - Rule engine result, used for fix-step fallback.
+ * @returns A validated InvestigatorLLMOutput object.
+ */
+export function validateAndBuildOutput(
+  parsed: any,
+  validLineNumbers: Set<number>,
+  ruleMatch: RuleMatch
+): InvestigatorLLMOutput {
+  // Null or non-object input is invalid
+  if (parsed === null || typeof parsed !== 'object') {
+    throw new Error('LLM output failed validation: input must be a JSON object');
+  }
+
+  // Strip invalid optional fields before Zod validation so an otherwise valid
+  // diagnosis is not discarded due to a malformed optional field.
+  if (parsed.patch !== undefined && typeof parsed.patch !== 'string') delete parsed.patch;
+  if (parsed.verifyWith !== undefined && typeof parsed.verifyWith !== 'string') delete parsed.verifyWith;
+  if (parsed.preventWith !== undefined && typeof parsed.preventWith !== 'string') delete parsed.preventWith;
+  if (parsed.isLikelyFlaky !== undefined && typeof parsed.isLikelyFlaky !== 'boolean') delete parsed.isLikelyFlaky;
+
+  // Validate required fields using Zod; throw so orchestrator fallback runs
+  let zodResult: z.infer<typeof InvestigatorOutputSchema>;
+  try {
+    zodResult = InvestigatorOutputSchema.parse(parsed);
+  } catch (err: any) {
+    throw new Error(`LLM output failed validation: ${err.message}`);
+  }
+
+  // Validate fixSteps: missing/empty falls back to rule hints; malformed throws
+  let fixSteps: string[];
+  if (!Array.isArray(parsed.fixSteps) || parsed.fixSteps.length === 0) {
+    if (Array.isArray(ruleMatch.fixHints) && ruleMatch.fixHints.length > 0) {
+      fixSteps = ruleMatch.fixHints;
+    } else {
+      throw new Error('No usable fix steps from LLM or rule engine');
+    }
+  } else {
+    fixSteps = parsed.fixSteps;
+  }
+
+  // Validate evidence lines: must exist in the supplied log window
+  const validEvidenceLines = zodResult.evidenceLines.filter((l) => validLineNumbers.has(l));
+  if (validEvidenceLines.length === 0) {
+    throw new Error('No valid evidence lines cited by LLM');
+  }
+
+  const output: InvestigatorLLMOutput = {
+    summary: zodResult.summary,
+    rootCause: zodResult.rootCause,
+    confidence: zodResult.confidence,
+    evidenceLines: validEvidenceLines,
+    fixSteps,
+    patch: zodResult.patch,
+    verifyWith: zodResult.verifyWith,
+    preventWith: zodResult.preventWith,
+    isLikelyFlaky: zodResult.isLikelyFlaky,
+  };
+
+  return output;
+}
+
+/**
+ * Extracts token count from a Gemini generation response.
+ * Uses actual SDK usageMetadata when available; falls back to a documented
+ * estimate of 450 when metadata is absent.
+ *
+ * @param response - The Gemini generateContent response object.
+ * @returns The token count (actual or estimated).
+ */
+export function extractTokens(response: any): number {
+  // estimated fallback when SDK usageMetadata is absent
+  let tokens = 450;
+  if (response.usageMetadata) {
+    tokens = response.usageMetadata.totalTokenCount;
+  }
+  return tokens;
+}
+
 export async function runInvestigatorAgent(params: {
   logWindow: { lineNo: number; text: string }[];
   ruleMatch: RuleMatch;
@@ -21,7 +135,7 @@ export async function runInvestigatorAgent(params: {
   occurrences: number;
   knownFix?: string;
   suspects?: SuspectCommit[];
-}): Promise<{ output: InvestigatorLLMOutput; tokens: number; latencyMs: number; model: string }> {
+}): Promise<{ output: InvestigatorLLMOutput; tokens: number; latencyMs: number; model: string; source: 'rules' | 'hybrid' }> {
   const startTime = Date.now();
   const apiKey = env.GEMINI_API_KEY;
 
@@ -79,42 +193,30 @@ Return ONLY a JSON object with this exact structure:
   const responseText = result.response.text();
   const latencyMs = Date.now() - startTime;
 
+  // Strip Markdown code fences (```json ... ```) before parsing
+  const cleanText = stripCodeFences(responseText);
+
   let parsed: any;
   try {
-    parsed = JSON.parse(responseText);
+    parsed = JSON.parse(cleanText);
   } catch (err) {
     throw new Error(`LLM output was not valid JSON: ${responseText}`);
   }
 
-  // Validate cited evidence lines exist
-  const rawEvidenceLines: number[] = Array.isArray(parsed.evidenceLines) ? parsed.evidenceLines : [];
-  const validatedLines = rawEvidenceLines.filter((l) => validLineNumbers.has(l));
+  // Validate and build output using shared validation logic
+  const output = validateAndBuildOutput(parsed, validLineNumbers, params.ruleMatch);
 
-  // If LLM hallucinated all lines, fallback to primary evidence from rule engine
-  if (validatedLines.length === 0 && params.ruleMatch.evidence.length > 0) {
-    for (const ev of params.ruleMatch.evidence) {
-      if (validLineNumbers.has(ev.lineNo)) {
-        validatedLines.push(ev.lineNo);
-      }
-    }
-  }
+  // Determine source: hybrid only if model cited at least one valid evidence line
+  const source: 'rules' | 'hybrid' = 'hybrid';
 
-  const output: InvestigatorLLMOutput = {
-    summary: parsed.summary || params.ruleMatch.title,
-    rootCause: parsed.rootCause || params.ruleMatch.explanation,
-    confidence: (['low', 'medium', 'high'].includes(parsed.confidence) ? parsed.confidence : 'medium') as any,
-    evidenceLines: validatedLines.length > 0 ? validatedLines : [params.ruleMatch.evidence[0]?.lineNo || 1],
-    fixSteps: Array.isArray(parsed.fixSteps) && parsed.fixSteps.length > 0 ? parsed.fixSteps : params.ruleMatch.fixHints,
-    patch: parsed.patch || params.ruleMatch.suggestedPatch,
-    verifyWith: parsed.verifyWith,
-    preventWith: parsed.preventWith,
-    isLikelyFlaky: typeof parsed.isLikelyFlaky === 'boolean' ? parsed.isLikelyFlaky : params.ruleMatch.transient
-  };
+  // Token usage: actual SDK metadata when available, otherwise documented estimate
+  const tokens = extractTokens(result.response);
 
   return {
     output,
-    tokens: 450, // estimated or read from usageMetadata if present
+    tokens,
     latencyMs,
-    model: modelName
+    model: modelName,
+    source,
   };
 }
