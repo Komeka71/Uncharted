@@ -327,12 +327,12 @@ Open http://localhost:3000. Click **Seed Demo** on the dashboard to load sample 
 
 **GitHub Actions (webhook)**
 
-1. Open **Project Settings** (`/app/projects`) and copy the **Webhook URL** and **Webhook Secret**.
+1. Open **Project Settings** (`/app/projects`) and copy your unique **Webhook URL** and **Webhook Secret**.
 2. In your GitHub repository, go to **Settings → Webhooks → Add webhook**.
-3. Paste the Webhook URL as the **Payload URL**, set **Content type** to `application/json`, and paste the secret.
+3. Set **Payload URL** to your Origin Webhook URL, **Content type** to `application/json`, and paste your secret.
 4. Under individual events, select **Workflow runs** and save.
 
-Every completed workflow run is now ingested and investigated.
+Every completed GitHub Actions run is now automatically ingested and investigated!
 
 **Any other CI (GitLab, Jenkins, CircleCI): generic ingest**
 

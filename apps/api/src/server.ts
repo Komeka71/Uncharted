@@ -1,3 +1,4 @@
+
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -6,6 +7,7 @@ import { initDb } from './db/initDb.js';
 import { isDbConnected } from './db/client.js';
 import { startWorkerLoop, stopWorkerLoop } from './queue/jobQueue.js';
 import { initChangeStreams } from './services/sse.js';
+import { registerRunProcessorHandlers } from './services/runProcessor.js';
 
 // Route imports
 import analyzeRoutes from './routes/analyze.js';
@@ -31,7 +33,12 @@ app.use(
     origin: allowedOrigins,
     credentials: allowedOrigins !== '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Hub-Signature-256', 'X-GitHub-Event']
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Hub-Signature-256',
+      'X-GitHub-Event'
+    ]
   })
 );
 
@@ -44,13 +51,14 @@ app.use(
     }
   })
 );
+
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Health check endpoint (satisfies Render keep-warm and uptime monitoring)
+// Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
-    app: 'Culprit API',
+    app: 'Origin API',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     database: isDbConnected() ? 'connected' : 'disconnected',
@@ -76,14 +84,14 @@ app.use((_req: Request, res: Response) => {
   res.status(404).json({
     error: {
       code: 'NOT_FOUND',
-      message: 'Endpoint does not exist on Culprit API server'
+      message: 'Endpoint does not exist on Origin API server'
     }
   });
 });
 
 // Global error handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('[Culprit API Error]:', err);
+  console.error('[Origin API Error]:', err);
   res.status(err.status || 500).json({
     error: {
       code: err.code || 'INTERNAL_SERVER_ERROR',
@@ -98,26 +106,32 @@ async function bootstrap() {
 
   // Initialize DB and indexes
   const db = await initDb();
+
   if (db) {
     initChangeStreams(db);
   }
+
+  // Register run processor job handlers
+  registerRunProcessorHandlers();
 
   // Start in-process job worker loop
   startWorkerLoop(1000);
 
   const server = app.listen(port, () => {
-    console.log(`\n======================================================`);
-    console.log(`🚀 CULPRIT API Server running on port ${port}`);
+    console.log('\n======================================================');
+    console.log(`🚀 ORIGIN API Server running on port ${port}`);
     console.log(`   Health: http://localhost:${port}/health`);
     console.log(`   SSE Stream: http://localhost:${port}/api/stream`);
     console.log(`   Mode: ${env.NODE_ENV}`);
-    console.log(`======================================================\n`);
+    console.log('======================================================\n');
   });
 
   // Graceful shutdown
   const shutdown = async () => {
-    console.log('\nGracefully shutting down Culprit API...');
+    console.log('\nGracefully shutting down Origin API...');
+
     stopWorkerLoop();
+
     server.close(() => {
       console.log('HTTP server closed.');
       process.exit(0);
@@ -128,7 +142,7 @@ async function bootstrap() {
   process.on('SIGINT', shutdown);
 }
 
-// Start server if this is the main module
+// Start server
 bootstrap().catch((err) => {
   console.error('Fatal bootstrap error:', err);
 });

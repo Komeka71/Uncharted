@@ -6,7 +6,7 @@ import {
   Diagnosis,
   SuspectCommit,
   RuleMatch
-} from '@culprit/core';
+} from '@origin/core';
 import { runInvestigatorAgent } from './gemini.js';
 import { broadcastSSE } from './sse.js';
 import { notifyN8nWebhook } from './n8n.js';

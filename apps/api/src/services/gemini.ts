@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { env } from '../config/env.js';
-import { RuleMatch, EvidenceLine, SuspectCommit } from '@culprit/core';
+import { RuleMatch, EvidenceLine, SuspectCommit } from '@origin/core';
 import { z } from 'zod';
 
 export interface InvestigatorLLMOutput {
@@ -155,7 +155,7 @@ export async function runInvestigatorAgent(params: {
 
   const validLineNumbers = new Set(params.logWindow.map((l) => l.lineNo));
 
-  const prompt = `You are Culprit's Lead CI Failure Investigator. Analyze this redacted CI failure log and produce a grounded diagnosis.
+  const prompt = `You are Origin's Lead CI Failure Investigator. Analyze this redacted CI failure log and produce a grounded diagnosis.
 
 RULE ENGINE TRIAGE:
 - Rule: ${params.ruleMatch.ruleId} (${params.ruleMatch.category})

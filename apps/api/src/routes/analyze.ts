@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { orchestrateAnalysis } from '../services/agentOrchestrator.js';
+import { createRateLimiter } from '../middleware/rateLimit.js';
 
 const router = Router();
+router.use(createRateLimiter({ windowMs: 60000, max: 20, message: 'Too many analysis requests, please slow down.' }));
 
 const AnalyzeBodySchema = z.object({
   log: z.string().min(1, 'Log content cannot be empty').max(5 * 1024 * 1024, 'Log exceeds 5MB limit'),

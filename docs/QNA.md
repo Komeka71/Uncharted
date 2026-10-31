@@ -1,12 +1,12 @@
-# Culprit Judge Q&A Cheat Sheet (15 Key Questions)
+# Origin Judge Q&A Cheat Sheet (15 Key Questions)
 
 > **Prepared for:** UNCHARTED 2026 Presentation & Round 1 Q&A  
-> **Team:** Culprit Engineering Team
+> **Team:** Origin Engineering Team
 
 ---
 
 ### Q1: Why did you build a deterministic rules engine first instead of sending the entire log directly to an LLM?
-**Answer:** Deterministic first, LLM second is our core architectural tenet. LLMs can hallucinate, are expensive at scale, and often miss nuanced exit codes in 10,000-line logs. Our deterministic engine categorizes the failure across 26+ rules in less than 5ms with zero token cost. The LLM is only used where it truly shines: synthesizing plain-English explanations, connecting changed files, and proposing intelligent patches. If the LLM is down or rate-limited, Culprit still produces a grounded diagnosis.
+**Answer:** Deterministic first, LLM second is our core architectural tenet. LLMs can hallucinate, are expensive at scale, and often miss nuanced exit codes in 10,000-line logs. Our deterministic engine categorizes the failure across 26+ rules in less than 5ms with zero token cost. The LLM is only used where it truly shines: synthesizing plain-English explanations, connecting changed files, and proposing intelligent patches. If the LLM is down or rate-limited, Origin still produces a grounded diagnosis.
 
 ---
 
@@ -38,7 +38,7 @@ This is inserted into MongoDB's `ingestEvents` collection backed by a **unique i
 
 ---
 
-### Q6: How does Culprit rank "Suspect Commits"?
+### Q6: How does Origin rank "Suspect Commits"?
 **Answer:** We inspect commits between the last green run and the failing run:
 - **+3 points** if a commit touched a file path cited in the stack trace or failure evidence.
 - **+2 points** for dependency failures if `package.json`, lockfiles, or `requirements.txt` changed.
@@ -58,12 +58,12 @@ This is inserted into MongoDB's `ingestEvents` collection backed by a **unique i
 ---
 
 ### Q8: What happens if MongoDB Atlas or the Gemini API is completely unreachable?
-**Answer:** Culprit has zero single points of failure. If MongoDB is offline, our API gracefully shifts to an in-memory queue and high-fidelity fallback dataset. If the Gemini API key is missing or quotas are hit, our Triage and Fix Advisor agents produce instant rule-based diagnoses (`source: "rules"`). Judges can test the entire app locally or offline with zero crashes.
+**Answer:** Origin has zero single points of failure. If MongoDB is offline, our API gracefully shifts to an in-memory queue and high-fidelity fallback dataset. If the Gemini API key is missing or quotas are hit, our Triage and Fix Advisor agents produce instant rule-based diagnoses (`source: "rules"`). Judges can test the entire app locally or offline with zero crashes.
 
 ---
 
 ### Q9: What is the "Team Memory" or "Known Fix" feature?
-**Answer:** When an engineer resolves a recurring failure, they can click "Mark as fixed by..." and save a note (and optional commit SHA) attached to that failure's stable 16-hex signature. When the same failure recurs weeks later on any branch, Culprit alerts the team: *"Last time this was fixed by Alex: Type SessionUser was refactored."*
+**Answer:** When an engineer resolves a recurring failure, they can click "Mark as fixed by..." and save a note (and optional commit SHA) attached to that failure's stable 16-hex signature. When the same failure recurs weeks later on any branch, Origin alerts the team: *"Last time this was fixed by Alex: Type SessionUser was refactored."*
 
 ---
 
@@ -72,7 +72,7 @@ This is inserted into MongoDB's `ingestEvents` collection backed by a **unique i
 
 ---
 
-### Q11: How does Culprit differ from GitHub's native Actions failure summary?
+### Q11: How does Origin differ from GitHub's native Actions failure summary?
 **Answer:** GitHub Actions only shows raw logs and highlights the exit step. It does not:
 - Redact leaked secrets in historical logs
 - Correlate identical signatures across different branches or runs
@@ -82,8 +82,8 @@ This is inserted into MongoDB's `ingestEvents` collection backed by a **unique i
 
 ---
 
-### Q12: Can teams using GitLab, CircleCI, or Jenkins use Culprit?
-**Answer:** Yes. In addition to native GitHub Webhooks, Culprit exposes a generic ingestion endpoint `POST /api/ingest/:projectId` that accepts standard JUnit XML or Jest JSON with a bearer token via a single `curl` command.
+### Q12: Can teams using GitLab, CircleCI, or Jenkins use Origin?
+**Answer:** Yes. In addition to native GitHub Webhooks, Origin exposes a generic ingestion endpoint `POST /api/ingest/:projectId` that accepts standard JUnit XML or Jest JSON with a bearer token via a single `curl` command.
 
 ---
 
@@ -92,8 +92,8 @@ This is inserted into MongoDB's `ingestEvents` collection backed by a **unique i
 
 ---
 
-### Q14: How does Culprit fit into the UNCHARTED 2026 track?
-**Answer:** Track 3 is "Developer Tools for Production Use Cases". Culprit directly targets the universal pain point where software teams lose hours debugging red builds and re-running flaky tests. It is production-ready, security-hardened, and requires zero login for judges.
+### Q14: How does Origin fit into the UNCHARTED 2026 track?
+**Answer:** Track 3 is "Developer Tools for Production Use Cases". Origin directly targets the universal pain point where software teams lose hours debugging red builds and re-running flaky tests. It is production-ready, security-hardened, and requires zero login for judges.
 
 ---
 

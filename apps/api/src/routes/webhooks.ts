@@ -4,8 +4,10 @@ import { getDb, isDbConnected } from '../db/client.js';
 import { verifyGitHubWebhookSignature } from '../services/github.js';
 import { env } from '../config/env.js';
 import { enqueueJob } from '../queue/jobQueue.js';
+import { createRateLimiter } from '../middleware/rateLimit.js';
 
 const router = Router();
+router.use(createRateLimiter({ windowMs: 60000, max: 120, message: 'Too many webhook events, please slow down.' }));
 const offlineEventDedupeCache = new Set<string>();
 
 router.post('/github', async (req: Request, res: Response) => {

@@ -39,8 +39,9 @@ export const RULE_DEFINITIONS: RuleDefinition[] = [
 +    "version": "1.0.1"`,
     matcher: (lines) => {
       for (let i = 0; i < lines.length; i++) {
-        if (/npm ci can only install packages when your package\.json and package-lock\.json are in sync/i.test(lines[i].text) ||
-            /npm ERR!.*Missing:.*from lock file/i.test(lines[i].text)) {
+        const text = lines[i].text;
+        if (/`?npm ci`? can only install packages when (?:your )?package\.json and package-lock\.json (?:or npm-shrinkwrap\.json )?are in sync/i.test(text) ||
+            /(?:npm (?:ERR!|error).*?)?Missing:\s+.*?\s+from lock file/i.test(text)) {
           const evidence: EvidenceLine[] = [{ lineNo: lines[i].lineNo, text: lines[i].text, role: 'primary' }];
           if (i > 0) evidence.unshift({ lineNo: lines[i - 1].lineNo, text: lines[i - 1].text, role: 'context' });
           if (i + 1 < lines.length) evidence.push({ lineNo: lines[i + 1].lineNo, text: lines[i + 1].text, role: 'context' });
@@ -431,6 +432,48 @@ export const RULE_DEFINITIONS: RuleDefinition[] = [
     }
   },
 
+  // 14b. Test Failures: vitest-failure
+  {
+    id: 'vitest-failure',
+    category: 'test_failure',
+    transient: false,
+    severity: 'high',
+    title: 'Vitest Test Assertion Failure',
+    explanation: 'One or more Vitest unit or integration test assertions failed.',
+    fixHints: [
+      'Run `npx vitest` locally focusing on the failing test suite.',
+      'Inspect the failing assertion in the test report.',
+      'Verify asynchronous operations, mocked endpoints, or expected test values.'
+    ],
+    matcher: (lines) => {
+      for (let i = 0; i < lines.length; i++) {
+        const text = lines[i].text;
+        if (/^\s*FAIL\s+.*>/i.test(text) ||
+            /AssertionError:/i.test(text) ||
+            /Test Files\s+\d+\s+failed/i.test(text) ||
+            /Tests\s+\d+\s+failed/i.test(text)) {
+          const evidence: EvidenceLine[] = [{ lineNo: lines[i].lineNo, text: lines[i].text, role: 'primary' }];
+          const failMatch = text.match(/^\s*FAIL\s+([^\s>]+)(?:\s*>\s*(.*))?/i);
+          const extracted: Record<string, string | number> = {};
+          if (failMatch) {
+            extracted.file = failMatch[1].trim();
+            if (failMatch[2]) extracted.test = failMatch[2].trim();
+          }
+          if (i + 1 < lines.length && lines[i + 1].text.trim().length > 0) {
+            evidence.push({ lineNo: lines[i + 1].lineNo, text: lines[i + 1].text, role: 'context' });
+          }
+          return {
+            matched: true,
+            confidence: 0.93,
+            evidence,
+            extracted
+          };
+        }
+      }
+      return null;
+    }
+  },
+
   // 15. Test Failures: pytest-failure
   {
     id: 'pytest-failure',
@@ -472,9 +515,9 @@ export const RULE_DEFINITIONS: RuleDefinition[] = [
     ],
     matcher: (lines) => {
       for (let i = 0; i < lines.length; i++) {
-        const match = lines[i].text.match(/(?:Missing required environment variable|KeyError:\s*['"]([A-Z0-9_]+)['"]|Environment variable\s+['"]?([A-Z0-9_]+)['"]?\s+is not set|process\.env\.([A-Z0-9_]+)\s+is undefined)/i);
+        const match = lines[i].text.match(/(?:Missing required environment variable(?::\s*([A-Za-z0-9_]+))?|KeyError:\s*['"]([A-Za-z0-9_]+)['"]|Environment variable\s+['"]?([A-Za-z0-9_]+)['"]?\s+is not set|process\.env\.([A-Za-z0-9_]+)\s+is undefined)/i);
         if (match) {
-          const varName = match[1] || match[2] || match[3] || 'UNKNOWN_VAR';
+          const varName = match[1] || match[2] || match[3] || match[4] || 'UNKNOWN_VAR';
           return {
             matched: true,
             confidence: 0.95,
@@ -705,7 +748,7 @@ export const RULE_DEFINITIONS: RuleDefinition[] = [
             /The remote server returned an error: \(503\)/i.test(lines[i].text)) {
           return {
             matched: true,
-            confidence: 0.94,
+            confidence: 0.95,
             evidence: [{ lineNo: lines[i].lineNo, text: lines[i].text, role: 'primary' }],
             extracted: {}
           };

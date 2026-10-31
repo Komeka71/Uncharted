@@ -1,12 +1,15 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { parseJUnitXml, parseJestJson } from '@culprit/core';
+import { parseJUnitXml, parseJestJson } from '@origin/core';
 import { getDb, isDbConnected } from '../db/client.js';
 import { orchestrateAnalysis } from '../services/agentOrchestrator.js';
+import { createRateLimiter } from '../middleware/rateLimit.js';
 import { env } from '../config/env.js';
 
 const router = Router();
+router.use(createRateLimiter({ windowMs: 60000, max: 60, message: 'Too many ingestion requests, please slow down.' }));
+const offlineIngestDedupeCache = new Set<string>();
 
 const IngestSchema = z.object({
   run: z.object({
@@ -28,21 +31,31 @@ router.post('/:projectId', async (req: Request, res: Response) => {
   const { projectId } = req.params;
   const authHeader = req.headers.authorization;
 
-const expectedTokens: string[] = [];
-if (isDbConnected()) {
-  const db = getDb();
-  const project = await db.collection('projects').findOne({ projectId });
-  if (project?.ingestToken) expectedTokens.push(project.ingestToken);
-}
-const originToken = process.env.ORIGIN_TOKEN || env.ORIGIN_TOKEN;
-if (originToken) expectedTokens.push(originToken);
-
-if (expectedTokens.length > 0) {
-  const ok = expectedTokens.some((t) => authHeader === `Bearer ${t}`);
-  if (!ok) {
-    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid or missing bearer token' } });
+  const expectedTokens: string[] = [];
+  if (isDbConnected()) {
+    const db = getDb();
+    const project = await db.collection('projects').findOne({
+      $or: [{ projectId }, { _id: projectId as any }]
+    });
+    if (!project) {
+      return res.status(404).json({ error: { code: 'PROJECT_NOT_FOUND', message: `Project ${projectId} not found` } });
+    }
+    if (project.ingestToken) {
+      expectedTokens.push(project.ingestToken);
+    }
   }
-}
+
+  const originToken = process.env.ORIGIN_TOKEN || env.ORIGIN_TOKEN;
+  if (originToken) {
+    expectedTokens.push(originToken);
+  }
+
+  if (expectedTokens.length > 0) {
+    const ok = expectedTokens.some((t) => authHeader === `Bearer ${t}`);
+    if (!ok) {
+      return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid or missing bearer token' } });
+    }
+  }
 
   const parseResult = IngestSchema.safeParse(req.body);
   if (!parseResult.success) {
@@ -57,6 +70,49 @@ if (expectedTokens.length > 0) {
   const { run, log, tests, format } = parseResult.data;
   const runId = `generic:${projectId}:${run.externalId}`;
   const headSha = run.sha;
+
+  // Idempotency: sha256(generic + projectId + externalId)
+  const eventId = crypto
+    .createHash('sha256')
+    .update(`generic:${projectId}:${run.externalId}`)
+    .digest('hex');
+
+  if (isDbConnected()) {
+    const db = getDb();
+    try {
+      await db.collection('ingestEvents').insertOne({
+        eventId,
+        projectId,
+        source: 'generic',
+        type: 'run',
+        status: 'received',
+        receivedAt: new Date()
+      });
+    } catch (err: any) {
+      if (err.code === 11000) {
+        return res.status(200).json({
+          duplicate: true,
+          success: true,
+          runId,
+          message: 'Run event already ingested and processed'
+        });
+      }
+    }
+  } else {
+    if (offlineIngestDedupeCache.has(eventId)) {
+      return res.status(200).json({
+        duplicate: true,
+        success: true,
+        runId,
+        message: 'Run event already ingested and processed (offline cache)'
+      });
+    }
+    offlineIngestDedupeCache.add(eventId);
+    if (offlineIngestDedupeCache.size > 1000) {
+      const first = offlineIngestDedupeCache.values().next().value;
+      if (first) offlineIngestDedupeCache.delete(first);
+    }
+  }
 
   // Handle test results if provided
   let normalizedTests: any[] = [];
@@ -166,6 +222,16 @@ if (expectedTokens.length > 0) {
       });
       diagnosisResult = result.diagnosis;
     }
+  }
+
+  if (isDbConnected()) {
+    try {
+      const db = getDb();
+      await db.collection('ingestEvents').updateOne(
+        { eventId },
+        { $set: { status: 'processed', processedAt: new Date() } }
+      );
+    } catch (e) {}
   }
 
   return res.status(200).json({

@@ -54,7 +54,7 @@ export default function ProjectsSetupPage() {
   };
 
   const webhookUrl = project?.webhookUrl || 'http://localhost:4000/api/webhooks/github';
-  const webhookSecret = project?.webhookSecret || 'culprit_demo_secret_2026';
+  const webhookSecret = project?.webhookSecret || 'origin_demo_secret_2026';
   const ingestToken = project?.ingestToken || 'clp_demo_token_xyz';
 
   const ghaSnippet = `name: Origin Ingest

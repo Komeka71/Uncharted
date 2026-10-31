@@ -30,10 +30,21 @@ router.post('/:signature/known-fix', async (req: Request, res: Response) => {
     if (isDbConnected()) {
       const db = getDb();
 
-      // If projectId is not explicitly provided, attempt to auto-resolve from signatures
+      // If projectId is not explicitly provided, attempt to auto-resolve uniquely from signatures
       if (!projectId) {
-        const found = await db.collection('signatures').findOne({ signature });
-        projectId = found?.projectId || 'demo-shop';
+        const matches = await db.collection('signatures').find({ signature }).toArray();
+        if (matches.length === 1) {
+          projectId = matches[0].projectId;
+        } else {
+          return res.status(409).json({
+            error: {
+              code: 'AMBIGUOUS_SIGNATURE',
+              message: matches.length > 1
+                ? `Signature ${signature} exists across multiple projects. Explicit projectId is required.`
+                : `Explicit projectId is required to register a known fix for signature ${signature}`
+            }
+          });
+        }
       }
 
       const knownFix = await recordKnownFix(db, {
@@ -101,6 +112,20 @@ router.get('/:signature/history', async (req: Request, res: Response) => {
         createdAt: f.createdAt instanceof Date ? f.createdAt.toISOString() : new Date(f.createdAt).toISOString()
       }));
 
+      if (!sigDoc && recentFailures.length === 0) {
+        return res.json({
+          signature,
+          projectId: projectId || 'demo-shop',
+          status: 'unknown',
+          occurrences: 0,
+          firstSeenAt: null,
+          lastSeenAt: null,
+          resolvedAt: null,
+          knownFix: undefined,
+          recentFailures: []
+        });
+      }
+
       return res.json({
         signature,
         projectId,
@@ -114,16 +139,22 @@ router.get('/:signature/history', async (req: Request, res: Response) => {
       });
     }
 
-    // Offline demo fallback
+    // Offline / fallback when database is disconnected: no fabricated occurrences
     return res.json({
       signature,
       projectId: projectId || 'demo-shop',
-      status: 'open',
-      occurrences: 2,
-      firstSeenAt: new Date(Date.now() - 86400000).toISOString(),
-      lastSeenAt: new Date().toISOString(),
+      status: 'unknown',
+      occurrences: 0,
+      firstSeenAt: null,
+      lastSeenAt: null,
+      resolvedAt: null,
       knownFix: undefined,
-      recentFailures: []
+      recentFailures: [],
+      isDemoData: true,
+      dataQuality: {
+        dbAvailable: false,
+        notes: ['Database is offline; returning empty signature state']
+      }
     });
   } catch (err: any) {
     return res.status(500).json({ error: { code: 'SIGNATURE_HISTORY_ERROR', message: err.message } });

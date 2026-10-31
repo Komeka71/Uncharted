@@ -1,6 +1,7 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert';
 import { MongoClient, Db } from 'mongodb';
+import dotenv from 'dotenv';
 import {
   ensureHistoryIndexes,
   recordFailureOccurrence,
@@ -10,8 +11,10 @@ import {
   buildHistoricalContext
 } from '../../src/history/historyService.js';
 
+dotenv.config();
+
 describe('MongoDB History Service Integration', () => {
-  const mongoUri = process.env.MONGODB_TEST_URI;
+  const mongoUri = process.env.MONGODB_TEST_URI || process.env.MONGODB_URI;
 
   test('buildHistoricalContext returns valid typed fallback when db is null', async () => {
     const context = await buildHistoricalContext(null, {
@@ -30,8 +33,8 @@ describe('MongoDB History Service Integration', () => {
   });
 
   if (!mongoUri) {
-    test('Live MongoDB integration tests skipped (MONGODB_TEST_URI not set)', () => {
-      console.log('Skipping live MongoDB integration tests: MONGODB_TEST_URI is not set.');
+    test('Live MongoDB integration tests skipped (neither MONGODB_TEST_URI nor MONGODB_URI set)', () => {
+      console.log('Skipping live MongoDB integration tests: no MongoDB URI available.');
       assert.ok(true);
     });
     return;
@@ -40,11 +43,11 @@ describe('MongoDB History Service Integration', () => {
   // Live MongoDB Tests with throwaway database
   let client: MongoClient | null = null;
   let db: Db | null = null;
-  const testDbName = `culprit_test_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  const testDbName = `origin_test_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
   before(async () => {
     // Safety check: protect production databases
-    if (!testDbName.startsWith('culprit_test_')) {
+    if (!testDbName.startsWith('origin_test_')) {
       throw new Error(`Refusing to run tests against non-test database: ${testDbName}`);
     }
 
@@ -53,7 +56,7 @@ describe('MongoDB History Service Integration', () => {
       await client.connect();
       db = client.db(testDbName);
     } catch (err: any) {
-      console.warn(`[history.test] Could not connect to MongoDB at ${mongoUri}: ${err.message}. Skipping live tests.`);
+      console.warn(`[history.test] Could not connect to MongoDB: ${err.message}. Skipping live tests.`);
       client = null;
       db = null;
     }
@@ -62,7 +65,7 @@ describe('MongoDB History Service Integration', () => {
   after(async () => {
     if (client && db) {
       try {
-        if (testDbName.startsWith('culprit_test_')) {
+        if (testDbName.startsWith('origin_test_')) {
           await db.dropDatabase();
         }
       } catch (err: any) {

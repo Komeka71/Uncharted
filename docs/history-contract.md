@@ -1,4 +1,4 @@
-# Culprit: Historical Intelligence and MongoDB Analytics Contract
+# Origin: Historical Intelligence and MongoDB Analytics Contract
 
 **Module Owner:** Person B (Historical Intelligence & MongoDB Analytics)  
 **Branch:** `feat/person-b-history`  
@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary
 
-This document specifies the interface contract between Person B's module and the rest of the Culprit platform:
+This document specifies the interface contract between Person B's module and the rest of the Origin platform:
 1. **Person C (Agentic Orchestrator & Historian Agent):** Consumes `buildHistoricalContext(...)` and `HistoricalContext` to supply grounded intelligence to the LLM without hallucinated statistics or mock numbers.
 2. **Person A (Ingestion & GitHub Services):** Provides commit diff file lists and triggers `recordFailureOccurrence` upon ingesting workflow failures.
 3. **Frontend (Dashboard & Analytics Views):** Receives honest, unpadded metrics from `/api/stats/overview`, `/api/flaky`, and `/api/signatures/:signature/history`.
@@ -17,7 +17,7 @@ This document specifies the interface contract between Person B's module and the
 
 ## 2. HistoricalContext Schema Contract
 
-The `HistoricalContext` is the single source of truth for all historical intelligence. It is defined in `@culprit/core` (`packages/core/src/history/types.ts`) and validated via Zod (`HistoricalContextSchema`).
+The `HistoricalContext` is the single source of truth for all historical intelligence. It is defined in `@origin/core` (`packages/core/src/history/types.ts`) and validated via Zod (`HistoricalContextSchema`).
 
 ```typescript
 export interface HistoricalContext {
@@ -104,6 +104,9 @@ export interface FlakyTestSummary {
 
 ### 3.3 Known Fix State Machine
 - When a developer registers a known fix note via `POST /api/signatures/:signature/known-fix`, it is recorded as `verificationStatus: 'unverified'`. It does **not** immediately resolve the signature.
+- **Project Scoping & Ambiguity:** `projectId` should be provided in the request body. If `projectId` is omitted:
+  - If the signature exists in exactly one project in the database, that project is automatically resolved.
+  - If the signature does not exist in any project or exists in multiple projects, the API rejects the request with HTTP `409 { error: { code: 'AMBIGUOUS_SIGNATURE', message: 'Signature is ambiguous across multiple projects. Please supply projectId.' } }`.
 - **Transitions:**
   - `unverified` $\rightarrow$ `verified`: A subsequent run in the scope succeeds after `fixedAt`.
   - `unverified` $\rightarrow$ `ineffective`: The same signature recurs in a subsequent run after `fixedAt` without any intervening successful run.
@@ -129,7 +132,7 @@ Evaluated over up to the last 30 non-skipped executions per test:
   - `+2.0`: Commit modified CI workflow, Dockerfile, or container config under `config_env` or `docker_container`.
   - `+1.0`: Commit modified related source files in the same directory (requires $\ge 2$ path segments, preventing bare `"src"` false positives).
   - Tie-breaker: Recency bonus `(idx + 1) * 0.02` (newer commits in the push break ties among commits that earned evidence-based points). Unrelated commits with 0 evidence match score 0.
-- **Empty Diffs:** If commit diffs contain no file paths (common when GitHub Actions compare payload omits per-commit file details), Culprit returns `status: 'insufficient_data'` with 0 suspects rather than inventing random guesses.
+- **Empty Diffs:** If commit diffs contain no file paths (common when GitHub Actions compare payload omits per-commit file details), Origin returns `status: 'insufficient_data'` with 0 suspects rather than inventing random guesses.
 
 ---
 
@@ -177,19 +180,13 @@ const historicalContext = await buildHistoricalContext(db, {
 // `Historical Context: ${JSON.stringify(historicalContext, null, 2)}`
 ```
 
-### 5.2 For Person A (GitHub Ingestion Service)
+### 5.2 GitHub Ingestion Service Commit Files Resolution
 
 In `apps/api/src/services/github.ts`:
-When GitHub compare REST endpoint (`/repos/{owner}/{repo}/compare/{base}...{head}`) returns commit summaries with empty `files: []`, consider fetching individual commit file diffs for up to 5 commits:
-```typescript
-// Recommended enhancement if compare omits files:
-if (commits.length > 0 && commits.every((c) => !c.files || c.files.length === 0)) {
-  for (const c of commits.slice(0, 5)) {
-    const detail = await octokit.rest.repos.getCommit({ owner, repo, ref: c.sha });
-    c.files = (detail.data.files || []).map((f) => f.filename);
-  }
-}
-```
+Person A implemented `fetchGitHubCompare` to automatically populate commit file lists:
+- For range comparisons (`/repos/{owner}/{repo}/compare/{base}...{head}`), if commits omit individual files, it queries `GET /repos/{owner}/{repo}/commits/{sha}` with concurrency 5 for up to the first 20 commits.
+- For single commits (`base === head`), it directly queries `GET /repos/{owner}/{repo}/commits/{sha}` and extracts modified filenames.
+- Provides `fetchGitHubRecentRuns` for automated project workflow sync (`POST /api/projects/:id/sync`).
 
 ### 5.3 For Frontend & Dashboard Engineers
 
@@ -204,16 +201,17 @@ if (commits.length > 0 && commits.every((c) => !c.files || c.files.length === 0)
      },
      "topRecurring": [],
      "categoryTrends": [],
-     "flakyCount": 0,
-     "isDemoData": false
+     "flakyCount": 0
    }
    ```
+   Notice `isDemoData` is **completely omitted** (undefined) when connected to MongoDB.
    The UI should display clean empty states ("No failures detected in the last 7 days", "All test suites stable") rather than breaking.
-2. **Offline Fallback Flag:** When the database is disconnected, responses include `"isDemoData": true` so the UI can optionally display a subtle "Demo Mode / Offline Data" badge.
+2. **Offline Fallback Flag:** Only when the database is disconnected or unreachable, responses include `"isDemoData": true` so the UI can display a subtle "Demo Mode / Offline Data" badge.
+3. **Signature History:** `GET /api/signatures/:signature/history` returns an honest empty response (`occurrences: 0, status: 'unknown', dataQuality: { dbAvailable: false }`) when no records exist or the database is unavailable.
 
 ### 5.4 For Demo Data & Seed Scripts
 
 To showcase **Resolution** and **MTTR** in live hackathon demos:
 - Seed a failure run at $T_0$.
 - Seed a successful run (`conclusion: 'success'`) on the same branch at $T_0 + 2\text{ hours}$.
-- Running `/api/stats/overview` will demonstrate Culprit automatically resolving the failure and computing an MTTR of `2.0h` without hardcoding!
+- Running `/api/stats/overview` will demonstrate Origin automatically resolving the failure and computing an MTTR of `2.0h` without hardcoding!

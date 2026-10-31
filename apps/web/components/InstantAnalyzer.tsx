@@ -27,7 +27,7 @@ src/services/authService.ts(45,21): Did you mean 'roles'?
     label: 'Missing Secret / Env Var',
     text: `2026-10-31T09:20:00.000Z ##[group]Run test:e2e
 Error: Missing required environment variable: STRIPE_SECRET_KEY
-    at Object.<anonymous> (/home/runner/work/culprit/culprit/src/config/stripe.js:12:11)
+    at Object.<anonymous> (/home/runner/work/origin/origin/src/config/stripe.js:12:11)
 ##[error]Process completed with exit code 1.
 ##[endgroup]`
   },

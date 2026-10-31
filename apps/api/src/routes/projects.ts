@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { getDb, isDbConnected } from '../db/client.js';
 import { fetchGitHubRun, fetchGitHubRunJobs, fetchGitHubJobLog } from '../services/github.js';
 import { orchestrateAnalysis } from '../services/agentOrchestrator.js';
+import { enqueueJob } from '../queue/jobQueue.js';
+import { env } from '../config/env.js';
 
 const router = Router();
 
@@ -85,8 +87,8 @@ router.get('/', async (_req: Request, res: Response) => {
       projects: [
         {
           projectId: 'demo-shop',
-          name: 'Culprit Demo Shop',
-          repo: { owner: 'culprit-ci', name: 'culprit-demo-shop', provider: 'github' },
+          name: 'Origin Demo Shop',
+          repo: { owner: 'origin-ci', name: 'origin-demo-shop', provider: 'github' },
           createdAt: new Date().toISOString()
         }
       ]
@@ -110,9 +112,9 @@ router.get('/:id', async (req: Request, res: Response) => {
     if (!project) {
       project = {
         projectId: id,
-        name: 'Culprit Demo Shop',
-        repo: { owner: 'culprit-ci', name: 'culprit-demo-shop', provider: 'github' },
-        webhookSecret: 'culprit_demo_secret_2026',
+        name: 'Origin Demo Shop',
+        repo: { owner: 'origin-ci', name: 'origin-demo-shop', provider: 'github' },
+        webhookSecret: 'origin_demo_secret_2026',
         ingestToken: 'clp_demo_token_xyz',
         createdAt: new Date()
       };
@@ -122,7 +124,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const proto = req.protocol || 'http';
     const webhookUrl = `${proto}://${host}/api/webhooks/github`;
 
-    const githubActionsSnippet = `name: Culprit Ingest
+    const githubActionsSnippet = `name: Origin Ingest
 on: [push, pull_request]
 
 jobs:
@@ -136,11 +138,11 @@ jobs:
       - run: npm ci
       - run: npm test -- --ci --testResultsProcessor=jest-junit
       
-      - name: Upload Test Results to Culprit
+      - name: Upload Test Results to Origin
         if: always()
         run: |
           curl -X POST "${proto}://${host}/api/ingest/${project.projectId}" \\
-            -H "Authorization: Bearer \${{ secrets.CULPRIT_TOKEN }}" \\
+            -H "Authorization: Bearer \${{ secrets.ORIGIN_TOKEN }}" \\
             -H "Content-Type: application/json" \\
             -d @- << 'EOF'
           {
@@ -170,13 +172,62 @@ jobs:
 router.post('/:id/sync', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    // Trigger sync job
+    let project: any = null;
+
+    if (isDbConnected()) {
+      const db = getDb();
+      project = await db.collection('projects').findOne({
+        $or: [{ projectId: id }, { _id: id as any }]
+      });
+      if (!project) {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'PROJECT_NOT_FOUND', message: `Project ${id} not found` },
+          message: `Project ${id} not found`
+        });
+      }
+    } else {
+      if (id === 'demo-shop') {
+        project = {
+          projectId: 'demo-shop',
+          name: 'Origin Demo Shop',
+          repo: { owner: 'origin-ci', name: 'origin-demo-shop', provider: 'github' }
+        };
+      } else {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'PROJECT_NOT_FOUND', message: `Project ${id} not found` },
+          message: `Project ${id} not found`
+        });
+      }
+    }
+
+    const token = project.githubToken || env.GITHUB_TOKEN;
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'MISSING_GITHUB_TOKEN', message: 'GITHUB_TOKEN is not configured for manual sync' },
+        message: 'GITHUB_TOKEN is not configured'
+      });
+    }
+
+    const jobId = await enqueueJob('sync_project_runs', {
+      projectId: project.projectId || id,
+      limit: 20
+    });
+
     return res.json({
       success: true,
-      message: `Sync triggered for project ${id}. Fetching recent completed workflow runs.`
+      queued: true,
+      jobId,
+      message: `Sync queued for project ${project.name || id}. Fetching recent completed workflow runs.`
     });
   } catch (err: any) {
-    return res.status(500).json({ error: { code: 'SYNC_ERROR', message: err.message } });
+    return res.status(500).json({
+      success: false,
+      error: { code: 'SYNC_ERROR', message: err.message },
+      message: err.message
+    });
   }
 });
 

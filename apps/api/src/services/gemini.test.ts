@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { stripCodeFences, validateAndBuildOutput, extractTokens } from './gemini.js';
-import { RuleMatch } from '@culprit/core';
+import { RuleMatch } from '@origin/core';
 
 const validLineNumbers = new Set([1, 2, 3, 4, 5]);
 

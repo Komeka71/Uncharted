@@ -1,7 +1,7 @@
-# Culprit Architecture & Technical Specification
+# Origin Architecture & Technical Specification
 
 > **Event:** UNCHARTED 2026 (Track 3: Developer Tools for Production Use Cases)  
-> **System:** Culprit — Autonomous Agentic CI Failure Investigator  
+> **System:** Origin — Autonomous Agentic CI Failure Investigator  
 
 ---
 
@@ -68,7 +68,7 @@ flowchart TD
 
 ## 3. Deterministic Analysis Engine (`packages/core`)
 
-Culprit follows a strict architectural principle: **Deterministic first, LLM second.**
+Origin follows a strict architectural principle: **Deterministic first, LLM second.**
 
 ### 3.1 Cleaning & Secret Redaction
 - Strips ANSI terminal color codes and extracts GitHub Actions step groups (`##[group]`, `##[error]`, `##[warning]`).

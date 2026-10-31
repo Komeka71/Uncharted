@@ -178,7 +178,7 @@ export default function FailureDetailPage() {
       logLines: [
         { lineNo: 1, text: '2026-10-31T09:02:01.000Z ##[group]Run npm run build' },
         { lineNo: 2, text: '##[command]npm run build' },
-        { lineNo: 3, text: '> culprit-demo@1.0.0 build' },
+        { lineNo: 3, text: '> origin-demo@1.0.0 build' },
         { lineNo: 4, text: '> tsc' },
         { lineNo: 5, text: "src/services/authService.ts(45,21): error TS2339: Property 'role' does not exist on type 'SessionUser'." },
         { lineNo: 6, text: "src/services/authService.ts(45,21): Did you mean 'roles'?" },
