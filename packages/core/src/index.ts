@@ -6,6 +6,7 @@ export * from './fingerprint/index.js';
 export * from './suspect/index.js';
 export * from './flake/index.js';
 export * from './parsers/index.js';
+export * from './history/index.js';
 
 import { parseAndCleanLog } from './cleaner/index.js';
 import { evaluateRules } from './rules/engine.js';
